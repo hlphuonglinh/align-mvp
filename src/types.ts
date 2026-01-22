@@ -50,6 +50,14 @@ export interface BusyBlock {
 }
 
 /**
+ * BusyBlock with ID for storage/UI operations.
+ * Extends BusyBlock with an identifier for editing/deleting.
+ */
+export interface StoredBusyBlock extends BusyBlock {
+  id: string;
+}
+
+/**
  * Governance decision for a time slot.
  */
 export type GovernanceVerdict = 'PERMIT' | 'WARN' | 'SILENCE';
