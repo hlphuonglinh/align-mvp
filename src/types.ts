@@ -183,3 +183,26 @@ export interface PlanOutputs {
   /** Mode-specific governance decisions from the Governor */
   modeDecisions?: ModeGovernanceDecision[];
 }
+
+/**
+ * Daily check-in log entry.
+ */
+export interface DailyLog {
+  dayISO: string;
+  rating: number; // 0-5
+  note?: string;
+  createdAtISO: string;
+}
+
+/**
+ * Export data structure.
+ */
+export interface ExportData {
+  exportedAtISO: string;
+  chronotypeProfile: ChronotypeProfile | null;
+  busyBlocks: StoredBusyBlock[];
+  constraints: unknown[]; // V1Constraint[]
+  baselineWindows: Record<string, BaselineWindow[]>; // keyed by dayISO
+  governorDecisions: Record<string, ModeGovernanceDecision[]>; // keyed by dayISO
+  dailyLogs: DailyLog[];
+}
