@@ -132,14 +132,46 @@ export interface QuizAnswers {
 }
 
 /**
+ * Governance decision for a specific mode.
+ */
+export interface ModeGovernanceDecision {
+  mode: BaselineMode;
+  decision: GovernanceVerdict;
+  /** Structural reason (neutral, no motivational language) */
+  reason: string;
+  /** Candidate window (only present for PERMIT/WARN) */
+  window?: {
+    start: string; // ISO string
+    end: string;   // ISO string
+  };
+  computedAt: string; // ISO string
+}
+
+/**
+ * Input for governor evaluation.
+ */
+export interface GovernorInput {
+  profile: ChronotypeProfile | null;
+  busyBlocks: BusyBlock[];
+  baselineWindows: BaselineWindow[];
+  dayISODate: string;
+}
+
+/**
  * Inputs to the computation pipeline.
  */
 export interface PlanInputs {
   chronotype?: LegacyChronotypeProfile;
+  /** New-style chronotype profile */
+  profile?: ChronotypeProfile;
   constraints?: Constraint[];
   busyBlocks?: BusyBlock[];
+  /** Baseline windows (for governor) */
+  baselineWindows?: BaselineWindow[];
   /** Target date for planning */
   date?: Date;
+  /** Target date as ISO string */
+  dayISODate?: string;
 }
 
 /**
@@ -148,4 +180,6 @@ export interface PlanInputs {
 export interface PlanOutputs {
   reliabilityWindows: ReliabilityWindow[];
   decisions: GovernanceDecision[];
+  /** Mode-specific governance decisions from the Governor */
+  modeDecisions?: ModeGovernanceDecision[];
 }

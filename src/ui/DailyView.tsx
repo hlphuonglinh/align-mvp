@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { StoredBusyBlock, ChronotypeProfile } from '../types.js';
+import type { StoredBusyBlock, ChronotypeProfile, ModeGovernanceDecision } from '../types.js';
 import { loadBusyBlocks, loadChronotypeProfile } from '../storage/index.js';
 import {
   getBlocksForDate,
@@ -7,6 +7,7 @@ import {
   formatDuration,
 } from '../calendar/busyBlocks.js';
 import { generateBaselineWindows } from '../baseline/index.js';
+import { evaluateDay } from '../governor/index.js';
 
 export function DailyView() {
   const [blocks, setBlocks] = useState<StoredBusyBlock[]>([]);
@@ -35,6 +36,14 @@ export function DailyView() {
   const totalBusyMinutes = calculateTotalBusyTime(blocksForSelectedDate);
   const baselineWindows = generateBaselineWindows(profile, selectedDate);
 
+  // Evaluate governance decisions
+  const governorDecisions = evaluateDay({
+    profile,
+    busyBlocks: blocksForSelectedDate,
+    baselineWindows,
+    dayISODate: selectedDate,
+  });
+
   // Determine silence state
   const isSilenceState = !profile || profile.confidence === 'LOW';
 
@@ -56,6 +65,14 @@ export function DailyView() {
       <div style={{ marginBottom: '1rem' }}>
         <strong>Total busy time: {formatDuration(totalBusyMinutes)}</strong>
       </div>
+
+      {/* Governor Section */}
+      <h2>Governor</h2>
+      <ul style={{ listStyle: 'none', padding: 0 }}>
+        {governorDecisions.map((decision) => (
+          <GovernorDecisionItem key={decision.mode} decision={decision} />
+        ))}
+      </ul>
 
       {/* Baseline Windows Section */}
       <h2>Baseline Windows</h2>
@@ -140,5 +157,50 @@ export function DailyView() {
         </ul>
       )}
     </div>
+  );
+}
+
+function GovernorDecisionItem({ decision }: { decision: ModeGovernanceDecision }) {
+  const borderColor =
+    decision.decision === 'PERMIT'
+      ? '#4a4'
+      : decision.decision === 'WARN'
+      ? '#ca4'
+      : '#999';
+
+  const bgColor =
+    decision.decision === 'PERMIT'
+      ? '#f0fff0'
+      : decision.decision === 'WARN'
+      ? '#fffef0'
+      : '#f5f5f5';
+
+  let windowStr = '';
+  if (decision.window) {
+    const start = new Date(decision.window.start);
+    const end = new Date(decision.window.end);
+    const startStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+    const endStr = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+    windowStr = `${startStr} - ${endStr}`;
+  }
+
+  return (
+    <li
+      style={{
+        padding: '0.5rem',
+        marginBottom: '0.5rem',
+        border: `1px solid ${borderColor}`,
+        backgroundColor: bgColor,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+        <strong>{decision.mode}</strong>
+        <span>{decision.decision}</span>
+      </div>
+      <div style={{ fontSize: '0.875rem', color: '#666' }}>
+        {decision.reason}
+        {windowStr && <span style={{ marginLeft: '0.5rem' }}>({windowStr})</span>}
+      </div>
+    </li>
   );
 }
