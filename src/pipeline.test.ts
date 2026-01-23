@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computePlan } from './pipeline.js';
-import type { BusyBlock, ChronotypeProfile, Constraint, GovernanceDecision } from './types.js';
+import type { BusyBlock, LegacyChronotypeProfile, Constraint, GovernanceDecision } from './types.js';
 
 describe('computePlan pipeline', () => {
   it('should exist and be a function', () => {
@@ -28,7 +28,7 @@ describe('computePlan pipeline', () => {
   });
 
   it('should return GovernanceDecision with SILENCE verdict for blocked constraints', () => {
-    const chronotype: ChronotypeProfile = {
+    const chronotype: LegacyChronotypeProfile = {
       type: 'morning',
       peakWindows: {
         focus: [{ start: '09:00', end: '12:00' }],
@@ -130,7 +130,7 @@ describe('BusyBlock type constraints', () => {
 
 describe('Pipeline with full inputs', () => {
   it('should generate reliability windows from chronotype', () => {
-    const chronotype: ChronotypeProfile = {
+    const chronotype: LegacyChronotypeProfile = {
       type: 'morning',
       peakWindows: {
         focus: [{ start: '09:00', end: '12:00' }],

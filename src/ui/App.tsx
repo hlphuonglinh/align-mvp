@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { TimeStructure } from './TimeStructure.js';
 import { DailyView } from './DailyView.js';
+import { Chronotype } from './Chronotype.js';
 
 export function App() {
   return (
@@ -8,11 +9,13 @@ export function App() {
       <div style={{ fontFamily: 'system-ui, sans-serif', padding: '1rem' }}>
         <nav style={{ marginBottom: '1rem' }}>
           <Link to="/" style={{ marginRight: '1rem' }}>Daily View</Link>
-          <Link to="/time-structure">Time Structure</Link>
+          <Link to="/time-structure" style={{ marginRight: '1rem' }}>Time Structure</Link>
+          <Link to="/chronotype">Chronotype</Link>
         </nav>
         <Routes>
           <Route path="/" element={<DailyView />} />
           <Route path="/time-structure" element={<TimeStructure />} />
+          <Route path="/chronotype" element={<Chronotype />} />
         </Routes>
       </div>
     </BrowserRouter>

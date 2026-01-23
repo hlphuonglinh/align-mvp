@@ -1,8 +1,28 @@
 /**
+ * Chronotype identifiers.
+ */
+export type Chronotype = 'AURORA' | 'DAYBREAK' | 'MERIDIAN' | 'TWILIGHT' | 'NOCTURNE';
+
+/**
+ * Confidence level for chronotype determination.
+ */
+export type ChronotypeConfidence = 'HIGH' | 'MED' | 'LOW';
+
+/**
  * Chronotype profile derived from quiz answers.
  * Deterministic: same answers always produce same profile.
  */
 export interface ChronotypeProfile {
+  chronotype: Chronotype;
+  confidence: ChronotypeConfidence;
+  computedAt: string; // ISO string
+}
+
+/**
+ * Legacy ChronotypeProfile for pipeline compatibility.
+ * @deprecated Use ChronotypeProfile instead
+ */
+export interface LegacyChronotypeProfile {
   /** Unique identifier for this profile type */
   type: string;
   /** Peak hours for different cognitive modes */
@@ -80,10 +100,42 @@ export interface ReliabilityWindow {
 }
 
 /**
+ * Cognitive modes for baseline windows.
+ */
+export type BaselineMode = 'FRAMING' | 'SYNTHESIS' | 'EVALUATION' | 'EXECUTION' | 'REFLECTION';
+
+/**
+ * Reliability level for baseline windows.
+ */
+export type BaselineReliability = 'RELIABLE' | 'FRAGILE';
+
+/**
+ * Baseline window generated from chronotype profile.
+ */
+export interface BaselineWindow {
+  start: string; // ISO string
+  end: string;   // ISO string
+  mode: BaselineMode;
+  reliability: BaselineReliability;
+  source: 'baseline';
+}
+
+/**
+ * Quiz answers object.
+ */
+export interface QuizAnswers {
+  q1?: number;
+  q2?: number;
+  q3?: number;
+  q4?: number;
+  q5?: number;
+}
+
+/**
  * Inputs to the computation pipeline.
  */
 export interface PlanInputs {
-  chronotype?: ChronotypeProfile;
+  chronotype?: LegacyChronotypeProfile;
   constraints?: Constraint[];
   busyBlocks?: BusyBlock[];
   /** Target date for planning */

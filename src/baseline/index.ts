@@ -1,1 +1,1 @@
-export {};
+export { generateBaselineWindows, getBaselineTemplates } from './windows.js';
