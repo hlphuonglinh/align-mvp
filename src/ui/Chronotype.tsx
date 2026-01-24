@@ -127,7 +127,7 @@ export function Chronotype() {
 
       {currentProfile.confidence === 'LOW' && (
         <p style={{ color: '#666', marginBottom: '1rem' }}>
-          Low confidence result. Baseline windows will not be generated.
+          Confidence insufficient. Baseline windows silenced.
         </p>
       )}
 

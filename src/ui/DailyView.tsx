@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { StoredBusyBlock, ChronotypeProfile, ModeGovernanceDecision, BusyBlock, DailyLog, ExportData, BaselineWindow } from '../types.js';
+import type { StoredBusyBlock, ChronotypeProfile, ModeGovernanceDecision, BusyBlock, DailyLog } from '../types.js';
 import type { V1Constraint } from '../constraints/types.js';
 import { loadBusyBlocks, loadChronotypeProfile, loadConstraints, loadDailyLogs, saveDailyLogs, getLogForDay, upsertDailyLog } from '../storage/index.js';
 import {
@@ -61,54 +61,6 @@ export function DailyView() {
     setDailyLogs(updatedLogs);
   };
 
-  const handleExport = () => {
-    // Generate data for last 7 days
-    const today = new Date();
-    const baselineWindowsByDay: Record<string, BaselineWindow[]> = {};
-    const governorDecisionsByDay: Record<string, ModeGovernanceDecision[]> = {};
-
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dayISO = date.toISOString().split('T')[0];
-
-      const dayBaselineWindows = generateBaselineWindows(profile, dayISO);
-      baselineWindowsByDay[dayISO] = dayBaselineWindows;
-
-      const dayConstraintBlocks = constraintsToBusyBlocks(constraints, dayISO);
-      const dayBusyBlocks = getBlocksForDate(blocks, date);
-      const allDayBlocks: BusyBlock[] = [...dayBusyBlocks, ...dayConstraintBlocks];
-
-      const dayDecisions = evaluateDay({
-        profile,
-        busyBlocks: allDayBlocks,
-        baselineWindows: dayBaselineWindows,
-        dayISODate: dayISO,
-      });
-      governorDecisionsByDay[dayISO] = dayDecisions;
-    }
-
-    const exportData: ExportData = {
-      exportedAtISO: new Date().toISOString(),
-      chronotypeProfile: profile,
-      busyBlocks: blocks,
-      constraints: constraints,
-      baselineWindows: baselineWindowsByDay,
-      governorDecisions: governorDecisionsByDay,
-      dailyLogs: dailyLogs,
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `align-export-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const blocksForSelectedDate = getBlocksForDate(blocks, new Date(selectedDate));
   const constraintsForDay = getConstraintsForDay(constraints, selectedDate);
   const constraintDerivedBlocks = constraintsToBusyBlocks(constraints, selectedDate);
@@ -133,11 +85,27 @@ export function DailyView() {
   // Determine silence state
   const isSilenceState = !profile || profile.confidence === 'LOW';
 
+  // Check if ALL modes are silent (for global banner)
+  const allModesSilent = governorDecisions.every(d => d.decision === 'SILENCE');
+
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <div>
       <h1>Daily Structure</h1>
+
+      {/* Global silence banner - only when ALL modes are silent */}
+      {allModesSilent && (
+        <div style={{
+          padding: '0.75rem',
+          marginBottom: '1rem',
+          backgroundColor: '#f5f5f5',
+          border: '1px solid #ddd',
+          color: '#666',
+        }}>
+          Silence: confidence insufficient or inputs incomplete.
+        </div>
+      )}
 
       <div style={{ marginBottom: '1rem' }}>
         <label>
@@ -238,11 +206,11 @@ export function DailyView() {
       {isSilenceState ? (
         <p style={{ color: '#666' }}>
           {!profile
-            ? 'No chronotype profile. Take the quiz to see baseline windows.'
-            : 'Low confidence profile. Baseline windows silenced.'}
+            ? 'No chronotype profile available.'
+            : 'Confidence insufficient. Baseline windows silenced.'}
         </p>
       ) : baselineWindows.length === 0 ? (
-        <p>No baseline windows for this profile.</p>
+        <p style={{ color: '#666' }}>No baseline windows for this profile.</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {baselineWindows.map((window, index) => {
@@ -316,14 +284,6 @@ export function DailyView() {
         </ul>
       )}
 
-      {/* Export Section */}
-      <h2>Export</h2>
-      <button onClick={handleExport} style={{ padding: '0.5rem 1rem' }}>
-        Export test data
-      </button>
-      <p style={{ color: '#666', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-        Downloads JSON with chronotype profile, busy blocks, constraints, baseline windows (7 days), governor decisions (7 days), and daily logs.
-      </p>
     </div>
   );
 }
@@ -334,14 +294,22 @@ function GovernorDecisionItem({ decision }: { decision: ModeGovernanceDecision }
       ? '#4a4'
       : decision.decision === 'WARN'
       ? '#ca4'
-      : '#999';
+      : '#bbb'; // Neutral gray for SILENCE
 
   const bgColor =
     decision.decision === 'PERMIT'
       ? '#f0fff0'
       : decision.decision === 'WARN'
       ? '#fffef0'
-      : '#f5f5f5';
+      : '#fafafa'; // Light neutral for SILENCE
+
+  // Display label: show "Silence" instead of "SILENCE"
+  const displayLabel =
+    decision.decision === 'PERMIT'
+      ? 'Permit'
+      : decision.decision === 'WARN'
+      ? 'Warn'
+      : 'Silence';
 
   let windowStr = '';
   if (decision.window) {
@@ -363,7 +331,9 @@ function GovernorDecisionItem({ decision }: { decision: ModeGovernanceDecision }
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
         <strong>{decision.mode}</strong>
-        <span>{decision.decision}</span>
+        <span style={{ color: decision.decision === 'SILENCE' ? '#888' : undefined }}>
+          {displayLabel}
+        </span>
       </div>
       <div style={{ fontSize: '0.875rem', color: '#666' }}>
         {decision.reason}
