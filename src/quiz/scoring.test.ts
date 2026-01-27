@@ -6,7 +6,7 @@ import type { QuizAnswers } from '../types.js';
 describe('scoreChronotype', () => {
   describe('determinism', () => {
     it('should produce same result for same answers', () => {
-      const answers: QuizAnswers = { q1: 1, q2: 1, q3: 1, q4: 1, q5: 1 };
+      const answers: QuizAnswers = { q1: 'A', q2: 'A', q3: 'A', q4: 'A', q5: 'A' };
       const result1 = scoreChronotype(answers);
       const result2 = scoreChronotype(answers);
 
@@ -14,40 +14,38 @@ describe('scoreChronotype', () => {
       expect(result1.confidence).toBe(result2.confidence);
     });
 
-    it('should produce AURORA for all early answers (sum=5)', () => {
-      const answers: QuizAnswers = { q1: 1, q2: 1, q3: 1, q4: 1, q5: 1 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('AURORA');
-    });
-
-    it('should produce DAYBREAK for early-leaning answers (sum=10)', () => {
-      const answers: QuizAnswers = { q1: 2, q2: 2, q3: 2, q4: 2, q5: 2 };
+    it('should produce DAYBREAK for extreme early answers (A,A,A,A,A)', () => {
+      // MSFsc ~2.75 falls in DAYBREAK range (2.5-3.5)
+      const answers: QuizAnswers = { q1: 'A', q2: 'A', q3: 'A', q4: 'A', q5: 'A' };
       const result = scoreChronotype(answers);
       expect(result.chronotype).toBe('DAYBREAK');
     });
 
-    it('should produce MERIDIAN for middle answers (sum=15)', () => {
-      const answers: QuizAnswers = { q1: 3, q2: 3, q3: 3, q4: 3, q5: 3 };
+    it('should produce DAYBREAK for middle answers (C,C,C,C,C)', () => {
+      // MSFsc ~3.25 falls in DAYBREAK range (2.5-3.5)
+      const answers: QuizAnswers = { q1: 'C', q2: 'C', q3: 'C', q4: 'C', q5: 'C' };
       const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('MERIDIAN');
+      expect(result.chronotype).toBe('DAYBREAK');
     });
 
-    it('should produce TWILIGHT for late-leaning answers (sum=20)', () => {
-      const answers: QuizAnswers = { q1: 4, q2: 4, q3: 4, q4: 4, q5: 4 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('TWILIGHT');
-    });
-
-    it('should produce NOCTURNE for all late answers (sum=25)', () => {
-      const answers: QuizAnswers = { q1: 5, q2: 5, q3: 5, q4: 5, q5: 5 };
+    it('should produce NOCTURNE for extreme late answers (E,E,E,E,E)', () => {
+      // MSFsc ~6.5 falls in NOCTURNE range (>=5.5)
+      const answers: QuizAnswers = { q1: 'E', q2: 'E', q3: 'E', q4: 'E', q5: 'E' };
       const result = scoreChronotype(answers);
       expect(result.chronotype).toBe('NOCTURNE');
+    });
+
+    it('should produce TWILIGHT for mixed late answers (B,D,B,C,C)', () => {
+      // MSFsc ~4.75 falls in TWILIGHT range (4.5-5.5)
+      const answers: QuizAnswers = { q1: 'B', q2: 'D', q3: 'B', q4: 'C', q5: 'C' };
+      const result = scoreChronotype(answers);
+      expect(result.chronotype).toBe('TWILIGHT');
     });
   });
 
   describe('confidence levels', () => {
     it('should return LOW confidence for missing answers', () => {
-      const answers: QuizAnswers = { q1: 3, q2: 3 }; // missing q3, q4, q5
+      const answers: QuizAnswers = { q1: 'C', q2: 'C' }; // missing q3, q4, q5
       const result = scoreChronotype(answers);
       expect(result.confidence).toBe('LOW');
     });
@@ -58,67 +56,30 @@ describe('scoreChronotype', () => {
       expect(result.confidence).toBe('LOW');
     });
 
-    it('should return HIGH confidence for consistent answers', () => {
-      const answers: QuizAnswers = { q1: 2, q2: 2, q3: 2, q4: 2, q5: 2 };
+    it('should return HIGH confidence for complete answers without Q3=E', () => {
+      const answers: QuizAnswers = { q1: 'B', q2: 'B', q3: 'B', q4: 'B', q5: 'B' };
       const result = scoreChronotype(answers);
       expect(result.confidence).toBe('HIGH');
     });
 
-    it('should return MED confidence for varied answers', () => {
-      const answers: QuizAnswers = { q1: 1, q2: 3, q3: 5, q4: 2, q5: 4 };
+    it('should return LOW confidence when Q3=E (alarm on free days)', () => {
+      // Per canon: Q3='E' → Lower confidence
+      const answers: QuizAnswers = { q1: 'C', q2: 'C', q3: 'E', q4: 'C', q5: 'C' };
       const result = scoreChronotype(answers);
-      expect(result.confidence).toBe('MED');
+      expect(result.confidence).toBe('LOW');
     });
 
     it('should return MERIDIAN when confidence is LOW (default)', () => {
-      const answers: QuizAnswers = { q1: 1 }; // very incomplete
+      const answers: QuizAnswers = { q1: 'A' }; // very incomplete
       const result = scoreChronotype(answers);
       expect(result.chronotype).toBe('MERIDIAN');
       expect(result.confidence).toBe('LOW');
     });
   });
 
-  describe('boundary cases', () => {
-    it('should produce AURORA at boundary (sum=8)', () => {
-      const answers: QuizAnswers = { q1: 1, q2: 1, q3: 2, q4: 2, q5: 2 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('AURORA');
-    });
-
-    it('should produce DAYBREAK at boundary (sum=9)', () => {
-      const answers: QuizAnswers = { q1: 1, q2: 2, q3: 2, q4: 2, q5: 2 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('DAYBREAK');
-    });
-
-    it('should produce DAYBREAK at boundary (sum=12)', () => {
-      const answers: QuizAnswers = { q1: 2, q2: 2, q3: 2, q4: 3, q5: 3 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('DAYBREAK');
-    });
-
-    it('should produce MERIDIAN at boundary (sum=13)', () => {
-      const answers: QuizAnswers = { q1: 2, q2: 3, q3: 2, q4: 3, q5: 3 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('MERIDIAN');
-    });
-
-    it('should produce TWILIGHT at boundary (sum=18)', () => {
-      const answers: QuizAnswers = { q1: 3, q2: 4, q3: 4, q4: 4, q5: 3 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('TWILIGHT');
-    });
-
-    it('should produce NOCTURNE at boundary (sum=22)', () => {
-      const answers: QuizAnswers = { q1: 4, q2: 5, q3: 4, q4: 5, q5: 4 };
-      const result = scoreChronotype(answers);
-      expect(result.chronotype).toBe('NOCTURNE');
-    });
-  });
-
   describe('computedAt field', () => {
     it('should include ISO timestamp', () => {
-      const answers: QuizAnswers = { q1: 3, q2: 3, q3: 3, q4: 3, q5: 3 };
+      const answers: QuizAnswers = { q1: 'C', q2: 'C', q3: 'C', q4: 'C', q5: 'C' };
       const result = scoreChronotype(answers);
       expect(result.computedAt).toBeDefined();
       expect(new Date(result.computedAt).toISOString()).toBe(result.computedAt);
@@ -127,18 +88,23 @@ describe('scoreChronotype', () => {
 });
 
 describe('isQuizComplete', () => {
-  it('should return true when all questions answered', () => {
-    const answers: QuizAnswers = { q1: 1, q2: 2, q3: 3, q4: 4, q5: 5 };
+  it('should return true when all questions answered with valid keys', () => {
+    const answers: QuizAnswers = { q1: 'A', q2: 'B', q3: 'C', q4: 'D', q5: 'E' };
     expect(isQuizComplete(answers)).toBe(true);
   });
 
   it('should return false when any question missing', () => {
-    const answers: QuizAnswers = { q1: 1, q2: 2, q3: 3, q4: 4 };
+    const answers: QuizAnswers = { q1: 'A', q2: 'B', q3: 'C', q4: 'D' };
     expect(isQuizComplete(answers)).toBe(false);
   });
 
   it('should return false for empty answers', () => {
     const answers: QuizAnswers = {};
+    expect(isQuizComplete(answers)).toBe(false);
+  });
+
+  it('should return false for invalid answer keys', () => {
+    const answers = { q1: 'A', q2: 'B', q3: 'C', q4: 'D', q5: 'F' } as QuizAnswers;
     expect(isQuizComplete(answers)).toBe(false);
   });
 });
@@ -153,10 +119,10 @@ describe('QUIZ_QUESTIONS', () => {
     expect(new Set(ids).size).toBe(5);
   });
 
-  it('should have options with values 1-5', () => {
+  it('should have options with keys A-E', () => {
     for (const q of QUIZ_QUESTIONS) {
-      const values = q.options.map(o => o.value).sort((a, b) => a - b);
-      expect(values).toEqual([1, 2, 3, 4, 5]);
+      const keys = q.options.map(o => o.key).sort();
+      expect(keys).toEqual(['A', 'B', 'C', 'D', 'E']);
     }
   });
 });

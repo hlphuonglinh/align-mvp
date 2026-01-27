@@ -15,8 +15,8 @@ describe('validateConstraint', () => {
 
     it('should reject missing id', () => {
       const constraint = {
-        kind: 'FIXED_HOURS',
-        payload: { daysOfWeek: [1], startLocal: '09:00', endLocal: '17:00' },
+        kind: 'FIXED_BLOCK',
+        payload: { dateISO: '2024-01-15', startLocal: '09:00', endLocal: '17:00' },
         createdAtISO: new Date().toISOString(),
       };
       const result = validateConstraint(constraint);
@@ -33,13 +33,13 @@ describe('validateConstraint', () => {
       };
       const result = validateConstraint(constraint);
       expect(result.ok).toBe(false);
-      expect(result.error).toBe('Invalid kind (must be FIXED_HOURS or FIXED_BLOCK)');
+      expect(result.error).toBe('Invalid kind (must be FIXED_BLOCK)');
     });
 
     it('should reject missing payload', () => {
       const constraint = {
         id: 'test',
-        kind: 'FIXED_HOURS',
+        kind: 'FIXED_BLOCK',
         createdAtISO: new Date().toISOString(),
       };
       const result = validateConstraint(constraint);
@@ -50,8 +50,8 @@ describe('validateConstraint', () => {
     it('should reject missing createdAtISO', () => {
       const constraint = {
         id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: { daysOfWeek: [1], startLocal: '09:00', endLocal: '17:00' },
+        kind: 'FIXED_BLOCK',
+        payload: { dateISO: '2024-01-15', startLocal: '09:00', endLocal: '17:00' },
       };
       const result = validateConstraint(constraint);
       expect(result.ok).toBe(false);
@@ -59,9 +59,10 @@ describe('validateConstraint', () => {
     });
   });
 
-  describe('FIXED_HOURS validation', () => {
-    it('should accept valid FIXED_HOURS constraint', () => {
-      const constraint: V1Constraint = {
+  describe('FIXED_HOURS migration (legacy support)', () => {
+    it('should silently ignore legacy FIXED_HOURS constraints', () => {
+      // This simulates old data that may still exist in localStorage
+      const legacyConstraint = {
         id: 'work-hours',
         kind: 'FIXED_HOURS',
         payload: {
@@ -71,100 +72,54 @@ describe('validateConstraint', () => {
         },
         createdAtISO: new Date().toISOString(),
       };
-      const result = validateConstraint(constraint);
-      expect(result.ok).toBe(true);
-    });
-
-    it('should reject empty daysOfWeek', () => {
-      const constraint: V1Constraint = {
-        id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: {
-          daysOfWeek: [],
-          startLocal: '09:00',
-          endLocal: '17:00',
-        },
-        createdAtISO: new Date().toISOString(),
-      };
-      const result = validateConstraint(constraint);
+      const result = validateConstraint(legacyConstraint);
+      // Should return not ok but without error (silent migration)
       expect(result.ok).toBe(false);
-      expect(result.error).toBe('daysOfWeek must not be empty');
-    });
-
-    it('should reject invalid day values (negative)', () => {
-      const constraint: V1Constraint = {
-        id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: {
-          daysOfWeek: [-1, 1],
-          startLocal: '09:00',
-          endLocal: '17:00',
-        },
-        createdAtISO: new Date().toISOString(),
-      };
-      const result = validateConstraint(constraint);
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('daysOfWeek values must be integers 0-6');
-    });
-
-    it('should reject invalid day values (> 6)', () => {
-      const constraint: V1Constraint = {
-        id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: {
-          daysOfWeek: [1, 7],
-          startLocal: '09:00',
-          endLocal: '17:00',
-        },
-        createdAtISO: new Date().toISOString(),
-      };
-      const result = validateConstraint(constraint);
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('daysOfWeek values must be integers 0-6');
-    });
-
-    it('should reject end before start', () => {
-      const constraint: V1Constraint = {
-        id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: {
-          daysOfWeek: [1],
-          startLocal: '17:00',
-          endLocal: '09:00',
-        },
-        createdAtISO: new Date().toISOString(),
-      };
-      const result = validateConstraint(constraint);
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('endLocal must be after startLocal');
-    });
-
-    it('should reject end equal to start', () => {
-      const constraint: V1Constraint = {
-        id: 'test',
-        kind: 'FIXED_HOURS',
-        payload: {
-          daysOfWeek: [1],
-          startLocal: '09:00',
-          endLocal: '09:00',
-        },
-        createdAtISO: new Date().toISOString(),
-      };
-      const result = validateConstraint(constraint);
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('endLocal must be after startLocal');
+      expect(result.error).toBeUndefined();
     });
   });
 
   describe('FIXED_BLOCK validation', () => {
     it('should accept valid FIXED_BLOCK constraint', () => {
       const constraint: V1Constraint = {
-        id: 'commute',
+        id: 'unavailable',
         kind: 'FIXED_BLOCK',
         payload: {
           dateISO: '2024-01-15',
           startLocal: '08:00',
           endLocal: '09:00',
+        },
+        createdAtISO: new Date().toISOString(),
+      };
+      const result = validateConstraint(constraint);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should accept FIXED_BLOCK with allDay=true', () => {
+      const constraint: V1Constraint = {
+        id: 'unavailable-all-day',
+        kind: 'FIXED_BLOCK',
+        payload: {
+          dateISO: '2024-01-15',
+          startLocal: '00:00',
+          endLocal: '00:00',
+          allDay: true,
+        },
+        createdAtISO: new Date().toISOString(),
+      };
+      const result = validateConstraint(constraint);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should not require valid times when allDay=true', () => {
+      const constraint: V1Constraint = {
+        id: 'unavailable-all-day',
+        kind: 'FIXED_BLOCK',
+        payload: {
+          dateISO: '2024-01-15',
+          startLocal: 'invalid',
+          endLocal: 'invalid',
+          allDay: true,
         },
         createdAtISO: new Date().toISOString(),
       };
@@ -225,9 +180,9 @@ describe('validateConstraint', () => {
     it('should reject invalid time format (no colon)', () => {
       const constraint: V1Constraint = {
         id: 'test',
-        kind: 'FIXED_HOURS',
+        kind: 'FIXED_BLOCK',
         payload: {
-          daysOfWeek: [1],
+          dateISO: '2024-01-15',
           startLocal: '0900',
           endLocal: '1700',
         },
@@ -241,9 +196,9 @@ describe('validateConstraint', () => {
     it('should reject invalid hours (> 23)', () => {
       const constraint: V1Constraint = {
         id: 'test',
-        kind: 'FIXED_HOURS',
+        kind: 'FIXED_BLOCK',
         payload: {
-          daysOfWeek: [1],
+          dateISO: '2024-01-15',
           startLocal: '24:00',
           endLocal: '25:00',
         },
@@ -256,9 +211,9 @@ describe('validateConstraint', () => {
     it('should reject invalid minutes (> 59)', () => {
       const constraint: V1Constraint = {
         id: 'test',
-        kind: 'FIXED_HOURS',
+        kind: 'FIXED_BLOCK',
         payload: {
-          daysOfWeek: [1],
+          dateISO: '2024-01-15',
           startLocal: '09:60',
           endLocal: '17:00',
         },

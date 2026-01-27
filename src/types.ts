@@ -79,8 +79,17 @@ export interface StoredBusyBlock extends BusyBlock {
 
 /**
  * Governance decision for a time slot.
+ * FRAGMENTED: Window is split by unavailable times into multiple segments.
  */
-export type GovernanceVerdict = 'PERMIT' | 'WARN' | 'SILENCE';
+export type GovernanceVerdict = 'PERMIT' | 'WARN' | 'SILENCE' | 'FRAGMENTED';
+
+/**
+ * A time segment (portion of a window after subtracting unavailable times).
+ */
+export interface TimeSegment {
+  start: string; // ISO string
+  end: string;   // ISO string
+}
 
 export interface GovernanceDecision {
   verdict: GovernanceVerdict;
@@ -122,13 +131,14 @@ export interface BaselineWindow {
 
 /**
  * Quiz answers object.
+ * Uses letter keys (A-E) per canon v4.5.
  */
 export interface QuizAnswers {
-  q1?: number;
-  q2?: number;
-  q3?: number;
-  q4?: number;
-  q5?: number;
+  q1?: string; // 'A' | 'B' | 'C' | 'D' | 'E'
+  q2?: string;
+  q3?: string;
+  q4?: string;
+  q5?: string;
 }
 
 /**
@@ -139,11 +149,13 @@ export interface ModeGovernanceDecision {
   decision: GovernanceVerdict;
   /** Structural reason (neutral, no motivational language) */
   reason: string;
-  /** Candidate window (only present for PERMIT/WARN) */
+  /** Candidate window (only present for PERMIT, single uninterrupted window) */
   window?: {
     start: string; // ISO string
     end: string;   // ISO string
   };
+  /** Segments (only present for FRAGMENTED, multiple segments after subtraction) */
+  segments?: TimeSegment[];
   computedAt: string; // ISO string
 }
 

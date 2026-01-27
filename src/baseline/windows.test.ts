@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateBaselineWindows, getBaselineTemplates } from './windows.js';
 import type { ChronotypeProfile, Chronotype } from '../types.js';
+import { ALL_CANON_MODES, CANON_WINDOW_TEMPLATES } from '../canon/index.js';
 
 const TEST_DATE = '2024-01-15';
 
@@ -32,81 +33,67 @@ describe('generateBaselineWindows', () => {
   });
 
   describe('AURORA chronotype', () => {
-    it('should generate correct windows', () => {
+    it('should generate all 5 canon mode windows', () => {
       const profile = createProfile('AURORA');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(3);
-      expect(result[0].mode).toBe('FRAMING');
-      expect(result[1].mode).toBe('EVALUATION');
-      expect(result[2].mode).toBe('SYNTHESIS');
+      expect(result).toHaveLength(5);
+      const modes = result.map(w => w.mode);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
+    });
 
-      // Check times
-      expect(new Date(result[0].start).getHours()).toBe(5);
-      expect(new Date(result[0].start).getMinutes()).toBe(30);
-      expect(new Date(result[0].end).getHours()).toBe(7);
-      expect(new Date(result[0].end).getMinutes()).toBe(30);
+    it('should use canon window times', () => {
+      const profile = createProfile('AURORA');
+      const result = generateBaselineWindows(profile, TEST_DATE);
+      const framing = result.find(w => w.mode === 'FRAMING')!;
+
+      // AURORA FRAMING: 06:00–08:00 (local time)
+      expect(new Date(framing.start).getHours()).toBe(6);
+      expect(new Date(framing.end).getHours()).toBe(8);
     });
   });
 
   describe('DAYBREAK chronotype', () => {
-    it('should generate correct windows (including duplicate time range)', () => {
+    it('should generate all 5 canon mode windows', () => {
       const profile = createProfile('DAYBREAK');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(4);
-      expect(result[0].mode).toBe('FRAMING');
-      expect(result[1].mode).toBe('SYNTHESIS');
-      expect(result[2].mode).toBe('EVALUATION');
-      expect(result[3].mode).toBe('SYNTHESIS');
-
-      // Verify overlapping windows (08:30-10:30)
-      expect(result[1].start).toBe(result[2].start);
-      expect(result[1].end).toBe(result[2].end);
+      expect(result).toHaveLength(5);
+      const modes = result.map(w => w.mode);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
     });
   });
 
   describe('MERIDIAN chronotype', () => {
-    it('should generate correct windows', () => {
+    it('should generate all 5 canon mode windows', () => {
       const profile = createProfile('MERIDIAN');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(3);
-      expect(result[0].mode).toBe('SYNTHESIS');
-      expect(result[1].mode).toBe('EVALUATION');
-      expect(result[2].mode).toBe('FRAMING');
-
-      expect(new Date(result[0].start).getHours()).toBe(10);
+      expect(result).toHaveLength(5);
+      const modes = result.map(w => w.mode);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
     });
   });
 
   describe('TWILIGHT chronotype', () => {
-    it('should generate correct windows', () => {
+    it('should generate all 5 canon mode windows', () => {
       const profile = createProfile('TWILIGHT');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(3);
-      expect(result[0].mode).toBe('SYNTHESIS');
-      expect(result[1].mode).toBe('EVALUATION');
-      expect(result[2].mode).toBe('FRAMING');
-
-      expect(new Date(result[0].start).getHours()).toBe(13);
+      expect(result).toHaveLength(5);
+      const modes = result.map(w => w.mode);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
     });
   });
 
   describe('NOCTURNE chronotype', () => {
-    it('should generate correct windows', () => {
+    it('should generate all 5 canon mode windows', () => {
       const profile = createProfile('NOCTURNE');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(3);
-      expect(result[0].mode).toBe('SYNTHESIS');
-      expect(result[1].mode).toBe('EVALUATION');
-      expect(result[2].mode).toBe('FRAMING');
-
-      expect(new Date(result[0].start).getHours()).toBe(18);
-      expect(new Date(result[2].end).getHours()).toBe(22);
-      expect(new Date(result[2].end).getMinutes()).toBe(30);
+      expect(result).toHaveLength(5);
+      const modes = result.map(w => w.mode);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
     });
   });
 
@@ -145,7 +132,7 @@ describe('generateBaselineWindows', () => {
       const profile = createProfile('TWILIGHT', 'MED');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result.length).toBeGreaterThan(0);
+      expect(result).toHaveLength(5);
     });
   });
 
@@ -166,7 +153,30 @@ describe('getBaselineTemplates', () => {
 
     for (const ct of chronotypes) {
       const templates = getBaselineTemplates(ct);
-      expect(templates.length).toBeGreaterThan(0);
+      expect(templates).toBeDefined();
+      expect(Object.keys(templates)).toHaveLength(5);
+    }
+  });
+
+  it('should return all 5 modes for each chronotype', () => {
+    const chronotypes: Chronotype[] = ['AURORA', 'DAYBREAK', 'MERIDIAN', 'TWILIGHT', 'NOCTURNE'];
+
+    for (const ct of chronotypes) {
+      const templates = getBaselineTemplates(ct);
+      for (const mode of ALL_CANON_MODES) {
+        expect(templates[mode]).toBeDefined();
+        expect(templates[mode].start).toBeDefined();
+        expect(templates[mode].end).toBeDefined();
+      }
+    }
+  });
+
+  it('should match canon window templates', () => {
+    const chronotypes: Chronotype[] = ['AURORA', 'DAYBREAK', 'MERIDIAN', 'TWILIGHT', 'NOCTURNE'];
+
+    for (const ct of chronotypes) {
+      const templates = getBaselineTemplates(ct);
+      expect(templates).toEqual(CANON_WINDOW_TEMPLATES[ct]);
     }
   });
 });

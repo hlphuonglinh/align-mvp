@@ -4,6 +4,7 @@ import type {
   BaselineWindow,
   BaselineMode,
   BusyBlock,
+  TimeSegment,
 } from '../types.js';
 
 /**
@@ -12,22 +13,43 @@ import type {
 const ALL_MODES: BaselineMode[] = ['FRAMING', 'SYNTHESIS', 'EVALUATION', 'EXECUTION', 'REFLECTION'];
 
 /**
+ * Minimum segment duration thresholds in minutes.
+ * Segments shorter than these are discarded.
+ */
+const MIN_SEGMENT_MINUTES: Record<BaselineMode, number> = {
+  FRAMING: 30,
+  EVALUATION: 30,
+  SYNTHESIS: 30,
+  EXECUTION: 45,
+  REFLECTION: 20,
+};
+
+/**
  * Structural reasons (neutral, no motivational language).
+ * Per UX spec: exact strings for each decision state.
  */
 const REASONS = {
-  CONFIDENCE_INSUFFICIENT: 'Confidence insufficient.',
-  NO_RELIABLE_WINDOW: 'No reliable window available.',
-  CONFLICT_WITH_BUSY: 'Conflicts with a busy block.',
-  WINDOW_RELIABLE_UNCONFLICTED: 'Window is structurally reliable and unconflicted.',
+  // Silence reasons
+  CONFIDENCE_INSUFFICIENT: 'Conditions are not structurally reliable right now.',
+  NO_RELIABLE_WINDOW: 'Conditions are not structurally reliable right now.',
+  // Fragmented reason (window split by unavailable times)
+  FRAGMENTED: 'Window is split by an unavailable time.',
+  // Permit reason
+  STRUCTURALLY_RELIABLE: 'Conditions support this mode of thinking.',
 } as const;
 
 /**
  * Evaluates governance decisions for a day.
  *
- * Rules v1:
+ * Rules v2:
  * 1) SILENCE if profile missing OR confidence LOW OR no baseline windows
  * 2) For each mode, find RELIABLE windows, pick earliest as candidate
- * 3) If candidate overlaps any BusyBlock => WARN, else => PERMIT
+ * 3) Subtract all BusyBlocks/Unavailable times from candidate window
+ * 4) Apply minimum duration threshold to remaining segments
+ * 5) Decision based on remaining segments:
+ *    - 0 segments => SILENCE
+ *    - 1 segment => PERMIT
+ *    - 2+ segments => FRAGMENTED
  */
 export function evaluateDay(input: GovernorInput): ModeGovernanceDecision[] {
   const { profile, busyBlocks, baselineWindows } = input;
@@ -58,7 +80,7 @@ export function evaluateDay(input: GovernorInput): ModeGovernanceDecision[] {
 }
 
 /**
- * Evaluates a single mode.
+ * Evaluates a single mode with window subtraction.
  */
 function evaluateMode(
   mode: BaselineMode,
@@ -86,32 +108,123 @@ function evaluateMode(
     (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
   )[0];
 
-  // Rule 3: Check for conflicts with BusyBlocks
-  const hasConflict = busyBlocks.some(block => windowsOverlap(candidate, block));
+  // Subtract all busy blocks from candidate window
+  const segments = subtractBusyBlocks(candidate, busyBlocks);
 
-  if (hasConflict) {
+  // Apply minimum duration threshold
+  const minMinutes = MIN_SEGMENT_MINUTES[mode];
+  const validSegments = segments.filter(seg => {
+    const durationMs = new Date(seg.end).getTime() - new Date(seg.start).getTime();
+    const durationMinutes = durationMs / (1000 * 60);
+    return durationMinutes >= minMinutes;
+  });
+
+  // Decision based on remaining segments
+  if (validSegments.length === 0) {
     return {
       mode,
-      decision: 'WARN',
-      reason: REASONS.CONFLICT_WITH_BUSY,
-      window: {
-        start: candidate.start,
-        end: candidate.end,
-      },
+      decision: 'SILENCE',
+      reason: REASONS.NO_RELIABLE_WINDOW,
       computedAt,
     };
   }
 
+  if (validSegments.length === 1) {
+    return {
+      mode,
+      decision: 'PERMIT',
+      reason: REASONS.STRUCTURALLY_RELIABLE,
+      window: validSegments[0],
+      computedAt,
+    };
+  }
+
+  // Multiple segments => FRAGMENTED
   return {
     mode,
-    decision: 'PERMIT',
-    reason: REASONS.WINDOW_RELIABLE_UNCONFLICTED,
-    window: {
-      start: candidate.start,
-      end: candidate.end,
-    },
+    decision: 'FRAGMENTED',
+    reason: REASONS.FRAGMENTED,
+    segments: validSegments,
     computedAt,
   };
+}
+
+/**
+ * Subtracts all busy blocks from a baseline window.
+ * Returns an array of remaining segments (0 to N).
+ */
+function subtractBusyBlocks(
+  baseline: BaselineWindow,
+  busyBlocks: BusyBlock[]
+): TimeSegment[] {
+  const baselineStart = new Date(baseline.start).getTime();
+  const baselineEnd = new Date(baseline.end).getTime();
+
+  // Collect all busy block intervals that overlap with baseline
+  const overlappingBlocks = busyBlocks
+    .map(block => ({
+      start: new Date(block.start).getTime(),
+      end: new Date(block.end).getTime(),
+    }))
+    .filter(block => block.start < baselineEnd && block.end > baselineStart);
+
+  // If no overlapping blocks, return the full window as single segment
+  if (overlappingBlocks.length === 0) {
+    return [{
+      start: baseline.start,
+      end: baseline.end,
+    }];
+  }
+
+  // Sort blocks by start time
+  overlappingBlocks.sort((a, b) => a.start - b.start);
+
+  // Merge overlapping busy blocks
+  const mergedBlocks: Array<{ start: number; end: number }> = [];
+  for (const block of overlappingBlocks) {
+    if (mergedBlocks.length === 0) {
+      mergedBlocks.push({ ...block });
+    } else {
+      const last = mergedBlocks[mergedBlocks.length - 1];
+      if (block.start <= last.end) {
+        // Overlapping or adjacent, extend
+        last.end = Math.max(last.end, block.end);
+      } else {
+        mergedBlocks.push({ ...block });
+      }
+    }
+  }
+
+  // Subtract merged blocks from baseline window
+  const segments: TimeSegment[] = [];
+  let currentStart = baselineStart;
+
+  for (const block of mergedBlocks) {
+    // Clamp block to baseline window
+    const blockStart = Math.max(block.start, baselineStart);
+    const blockEnd = Math.min(block.end, baselineEnd);
+
+    if (currentStart < blockStart) {
+      // There's a gap before this block
+      segments.push({
+        start: new Date(currentStart).toISOString(),
+        end: new Date(blockStart).toISOString(),
+      });
+    }
+
+    // Move past this block
+    currentStart = Math.max(currentStart, blockEnd);
+  }
+
+  // Add remaining segment after last block
+  if (currentStart < baselineEnd) {
+    segments.push({
+      start: new Date(currentStart).toISOString(),
+      end: new Date(baselineEnd).toISOString(),
+    });
+  }
+
+  return segments;
 }
 
 /**
@@ -132,4 +245,4 @@ function windowsOverlap(baseline: BaselineWindow, busy: BusyBlock): boolean {
 /**
  * Export for testing.
  */
-export { windowsOverlap as _windowsOverlap };
+export { windowsOverlap as _windowsOverlap, subtractBusyBlocks as _subtractBusyBlocks };

@@ -1,24 +1,12 @@
 /**
  * Constraint kinds supported in v1.
+ * V1 only supports FIXED_BLOCK (one-off unavailable times).
  */
-export type ConstraintKind = 'FIXED_HOURS' | 'FIXED_BLOCK';
+export type ConstraintKind = 'FIXED_BLOCK';
 
 /**
- * FIXED_HOURS payload: recurring constraint for specific days of week.
- * Example: work hours Mon-Fri 09:00-17:00
- */
-export interface FixedHoursPayload {
-  /** Days of week (0=Sunday, 6=Saturday) */
-  daysOfWeek: number[];
-  /** Start time in local HH:MM format */
-  startLocal: string;
-  /** End time in local HH:MM format */
-  endLocal: string;
-}
-
-/**
- * FIXED_BLOCK payload: one-time constraint for a specific date.
- * Example: commute on 2024-01-15 from 08:00-09:00
+ * FIXED_BLOCK payload: one-time unavailable period for a specific date.
+ * Example: unavailable on 2024-01-15 from 08:00-09:00
  */
 export interface FixedBlockPayload {
   /** Date in YYYY-MM-DD format */
@@ -27,12 +15,15 @@ export interface FixedBlockPayload {
   startLocal: string;
   /** End time in local HH:MM format */
   endLocal: string;
+  /** If true, the entire day is unavailable (startLocal/endLocal ignored) */
+  allDay?: boolean;
 }
 
 /**
  * Union type for constraint payloads.
+ * V1 only has FIXED_BLOCK.
  */
-export type ConstraintPayload = FixedHoursPayload | FixedBlockPayload;
+export type ConstraintPayload = FixedBlockPayload;
 
 /**
  * V1 Constraint structure.
@@ -45,15 +36,17 @@ export interface V1Constraint {
 }
 
 /**
- * Type guard for FIXED_HOURS payload.
- */
-export function isFixedHoursPayload(payload: ConstraintPayload): payload is FixedHoursPayload {
-  return 'daysOfWeek' in payload;
-}
-
-/**
  * Type guard for FIXED_BLOCK payload.
  */
 export function isFixedBlockPayload(payload: ConstraintPayload): payload is FixedBlockPayload {
   return 'dateISO' in payload;
+}
+
+/**
+ * Legacy type guard for FIXED_HOURS (always returns false).
+ * Kept for migration safety - old code that checks this won't crash.
+ * @deprecated FIXED_HOURS is no longer supported
+ */
+export function isFixedHoursPayload(_payload: unknown): boolean {
+  return false;
 }

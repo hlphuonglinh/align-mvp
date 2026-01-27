@@ -25,7 +25,7 @@ describe('SILENCE messages', () => {
       expect(decisions).toHaveLength(5);
       decisions.forEach(decision => {
         expect(decision.decision).toBe('SILENCE');
-        expect(decision.reason).toBe('Confidence insufficient.');
+        expect(decision.reason).toBe('Conditions are not structurally reliable right now.');
       });
     });
 
@@ -46,7 +46,7 @@ describe('SILENCE messages', () => {
       expect(decisions).toHaveLength(5);
       decisions.forEach(decision => {
         expect(decision.decision).toBe('SILENCE');
-        expect(decision.reason).toBe('Confidence insufficient.');
+        expect(decision.reason).toBe('Conditions are not structurally reliable right now.');
       });
     });
   });
@@ -63,7 +63,7 @@ describe('SILENCE messages', () => {
       expect(decisions).toHaveLength(5);
       decisions.forEach(decision => {
         expect(decision.decision).toBe('SILENCE');
-        expect(decision.reason).toBe('No reliable window available.');
+        expect(decision.reason).toBe('Conditions are not structurally reliable right now.');
       });
     });
 
@@ -87,7 +87,7 @@ describe('SILENCE messages', () => {
 
       const framingDecision = decisions.find(d => d.mode === 'FRAMING');
       expect(framingDecision?.decision).toBe('SILENCE');
-      expect(framingDecision?.reason).toBe('No reliable window available.');
+      expect(framingDecision?.reason).toBe('Conditions are not structurally reliable right now.');
     });
   });
 
@@ -132,12 +132,11 @@ describe('SILENCE messages', () => {
 
   describe('reason string stability', () => {
     it('should use exact stable strings for all reasons', () => {
-      // These exact strings are part of the contract
+      // These exact strings are part of the contract (UX spec)
       const expectedReasons = {
-        confidenceInsufficient: 'Confidence insufficient.',
-        noReliableWindow: 'No reliable window available.',
-        conflictWithBusy: 'Conflicts with a busy block.',
-        windowReliableUnconflicted: 'Window is structurally reliable and unconflicted.',
+        silence: 'Conditions are not structurally reliable right now.',
+        fragmented: 'Window is split by an unavailable time.',
+        permit: 'Conditions support this mode of thinking.',
       };
 
       // Test confidence insufficient
@@ -147,7 +146,7 @@ describe('SILENCE messages', () => {
         baselineWindows: [],
         dayISODate: '2024-01-15',
       });
-      expect(nullProfileDecisions[0].reason).toBe(expectedReasons.confidenceInsufficient);
+      expect(nullProfileDecisions[0].reason).toBe(expectedReasons.silence);
 
       // Test no reliable window
       const noWindowsDecisions = evaluateDay({
@@ -156,31 +155,32 @@ describe('SILENCE messages', () => {
         baselineWindows: [],
         dayISODate: '2024-01-15',
       });
-      expect(noWindowsDecisions[0].reason).toBe(expectedReasons.noReliableWindow);
+      expect(noWindowsDecisions[0].reason).toBe(expectedReasons.silence);
 
-      // Test conflict with busy
+      // Test fragmented (busy block splits window into segments)
       const baselineWindows: BaselineWindow[] = [
         {
-          start: '2024-01-15T09:00:00.000Z',
-          end: '2024-01-15T11:00:00.000Z',
+          start: '2024-01-15T08:00:00.000Z',
+          end: '2024-01-15T12:00:00.000Z', // 4 hour window
           mode: 'FRAMING',
           reliability: 'RELIABLE',
           source: 'baseline',
         },
       ];
-      const conflictDecisions = evaluateDay({
+      const fragmentedDecisions = evaluateDay({
         profile: mockProfile,
         busyBlocks: [{
-          start: new Date('2024-01-15T09:00:00.000Z'),
-          end: new Date('2024-01-15T10:00:00.000Z'),
+          start: new Date('2024-01-15T09:30:00.000Z'),
+          end: new Date('2024-01-15T10:30:00.000Z'), // splits into two 90-min segments
           allDay: false,
           source: 'manual',
         }],
         baselineWindows,
         dayISODate: '2024-01-15',
       });
-      const framingConflict = conflictDecisions.find(d => d.mode === 'FRAMING');
-      expect(framingConflict?.reason).toBe(expectedReasons.conflictWithBusy);
+      const framingFragmented = fragmentedDecisions.find(d => d.mode === 'FRAMING');
+      expect(framingFragmented?.decision).toBe('FRAGMENTED');
+      expect(framingFragmented?.reason).toBe(expectedReasons.fragmented);
 
       // Test window reliable and unconflicted
       const permitDecisions = evaluateDay({
@@ -190,7 +190,7 @@ describe('SILENCE messages', () => {
         dayISODate: '2024-01-15',
       });
       const framingPermit = permitDecisions.find(d => d.mode === 'FRAMING');
-      expect(framingPermit?.reason).toBe(expectedReasons.windowReliableUnconflicted);
+      expect(framingPermit?.reason).toBe(expectedReasons.permit);
     });
   });
 });
