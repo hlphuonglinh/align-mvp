@@ -200,14 +200,18 @@ export function PortalPopover({
   const actualTooltipId = tooltipId || generatedId.current;
 
   // Use controlled or internal state
-  const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const isControlled = controlledOpen !== undefined;
+  const isOpen = isControlled ? controlledOpen : internalOpen;
   const setIsOpen = useCallback((value: boolean) => {
+    // Always notify parent if callback provided
     if (onOpenChange) {
       onOpenChange(value);
-    } else {
+    }
+    // Update internal state when not fully controlled
+    if (!isControlled) {
       setInternalOpen(value);
     }
-  }, [onOpenChange]);
+  }, [onOpenChange, isControlled]);
 
   // Clear timeouts on unmount
   useEffect(() => {
