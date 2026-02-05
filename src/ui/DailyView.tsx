@@ -288,6 +288,7 @@ export function DailyView() {
                 element.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }
             }}
+            baselineWindows={baselineWindows}
           />
 
           {/* Daily Check-in Section */}
@@ -413,6 +414,7 @@ export function DailyView() {
             hoveredMode={hoveredMode}
             onModeHover={setHoveredMode}
             onEditConflict={handleEditUnavailable}
+            baselineWindows={baselineWindows}
           />
         </div>
       </div>
@@ -441,18 +443,55 @@ export function DailyView() {
         }}>
           {constraintsForDay.map((constraint) => {
             let description = '';
+            let constraintStart = '';
+            let constraintEnd = '';
             if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
               if (constraint.payload.allDay) {
                 description = 'All day';
+                constraintStart = '00:00';
+                constraintEnd = '24:00';
               } else {
                 description = `${constraint.payload.startLocal} - ${constraint.payload.endLocal}`;
+                constraintStart = constraint.payload.startLocal || '';
+                constraintEnd = constraint.payload.endLocal || '';
               }
             }
 
+            // Helper to check if two time windows overlap
+            const timesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string): boolean => {
+              if (!aStart || !aEnd || !bStart || !bEnd) return false;
+              const toMin = (t: string) => {
+                const [h, m] = t.split(':').map(Number);
+                return h * 60 + m;
+              };
+              return toMin(aStart) < toMin(bEnd) && toMin(bStart) < toMin(aEnd);
+            };
+
+            // Helper to convert ISO to HH:mm
+            const isoToHHMM = (iso: string): string => {
+              const date = new Date(iso);
+              return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            };
+
             // Find which modes this unavailable time affects
-            const affectedModes = modeWindows
+            // Check both modeWindows conflicts AND baseline window overlap
+            const affectedModeSet = new Set<string>();
+
+            // 1. Check modeWindows conflicts (existing logic)
+            modeWindows
               .filter(mw => mw.fragmentation.conflicts.some(c => c.id === constraint.id))
-              .map(mw => mw.mode);
+              .forEach(mw => affectedModeSet.add(mw.mode));
+
+            // 2. Also check baselineWindows for modes that might be SILENCE/WITHHELD
+            baselineWindows.forEach(bw => {
+              const bwStart = isoToHHMM(bw.start);
+              const bwEnd = isoToHHMM(bw.end);
+              if (timesOverlap(constraintStart, constraintEnd, bwStart, bwEnd)) {
+                affectedModeSet.add(bw.mode);
+              }
+            });
+
+            const affectedModes = Array.from(affectedModeSet);
 
             return (
               <div

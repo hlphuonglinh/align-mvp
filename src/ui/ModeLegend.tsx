@@ -17,6 +17,7 @@ interface ModeLegendProps {
   hoveredMode?: BaselineMode | null;
   onModeHover?: (mode: BaselineMode | null) => void;
   onModeClick?: (mode: Mode) => void;
+  baselineWindows?: Array<{ mode: string; start: string; end: string }>;
 }
 
 // Mode labels
@@ -150,14 +151,34 @@ function detectOverlaps(modeWindows: ModeWindow[]): Array<{
   return overlaps;
 }
 
+/**
+ * Convert ISO datetime string to HH:mm format.
+ */
+function isoToHHMM(iso: string): string {
+  const date = new Date(iso);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 export function ModeLegend({
   modeWindows,
   hoveredMode,
   onModeHover,
   onModeClick,
+  baselineWindows = [],
 }: ModeLegendProps) {
   const visibleModes = modeWindows.filter(mw => mw.state !== 'SILENCE');
   const overlaps = detectOverlaps(modeWindows);
+
+  // Create a lookup map for baseline windows by mode
+  const baselineByMode: Record<string, { start: string; end: string }> = {};
+  for (const bw of baselineWindows) {
+    baselineByMode[bw.mode] = {
+      start: isoToHHMM(bw.start),
+      end: isoToHHMM(bw.end),
+    };
+  }
 
   return (
     <div style={{ marginTop: spacing.lg }}>
@@ -231,7 +252,7 @@ export function ModeLegend({
                 {MODE_LABELS[mw.mode]}
               </div>
 
-              {/* Time range */}
+              {/* Time range - always show baseline, even for WITHHELD */}
               <div
                 style={{
                   fontSize: '0.8125rem',
@@ -239,7 +260,19 @@ export function ModeLegend({
                   color: colors.text.tertiary,
                 }}
               >
-                {mw.fragmentation.baselineWindow.start} – {mw.fragmentation.baselineWindow.end}
+                {(() => {
+                  const fragStart = mw.fragmentation.baselineWindow.start;
+                  const fragEnd = mw.fragmentation.baselineWindow.end;
+                  // Use fragmentation baseline if available, otherwise fallback to baselineWindows lookup
+                  if (fragStart && fragEnd) {
+                    return `${fragStart} – ${fragEnd}`;
+                  }
+                  const baseline = baselineByMode[mw.mode];
+                  if (baseline) {
+                    return `${baseline.start} – ${baseline.end}`;
+                  }
+                  return '–';
+                })()}
               </div>
 
               {/* State badge (if non-ideal) */}

@@ -39,6 +39,15 @@ const MODE_COLORS: Record<Mode, string> = {
   REFLECTION: colors.modes.REFLECTION.primary,
 };
 
+// Mode abbreviations for ring labels
+const MODE_ABBREV: Record<Mode, string> = {
+  EVALUATION: 'EVA',
+  FRAMING: 'FRA',
+  SYNTHESIS: 'SYN',
+  EXECUTION: 'EXE',
+  REFLECTION: 'REF',
+};
+
 /**
  * Convert time string (HH:MM) to minutes since midnight.
  */
@@ -158,6 +167,31 @@ export function ModeRingSimplified({
     }));
   }, [modeWindows]);
 
+  // Compute mode spans (consecutive hours with same dominant mode) for labeling
+  const modeSpans = useMemo(() => {
+    const spans: Array<{ mode: Mode; startHour: number; endHour: number }> = [];
+    let currentMode: Mode | null = null;
+    let spanStart = 0;
+
+    for (let hour = 0; hour < 24; hour++) {
+      const mode = hourlySegments[hour].dominantMode;
+      if (mode !== currentMode) {
+        if (currentMode) {
+          spans.push({ mode: currentMode, startHour: spanStart, endHour: hour });
+        }
+        currentMode = mode;
+        spanStart = hour;
+      }
+    }
+    // Close final span
+    if (currentMode) {
+      spans.push({ mode: currentMode, startHour: spanStart, endHour: 24 });
+    }
+
+    // Filter to spans with at least 2 hours (enough room for label)
+    return spans.filter(s => s.endHour - s.startHour >= 2);
+  }, [hourlySegments]);
+
   // Hour labels (every 3 hours)
   const hourLabels = useMemo(() => {
     return [0, 3, 6, 9, 12, 15, 18, 21].map(hour => {
@@ -226,6 +260,38 @@ export function ModeRingSimplified({
                 {segment.activeModes.length > 1 && `\n(${segment.activeModes.length} modes active)`}
               </title>
             </path>
+          );
+        })}
+
+        {/* Mode abbreviation labels inside ring */}
+        {modeSpans.map((span) => {
+          const midHour = (span.startHour + span.endHour) / 2;
+          const midAngle = hourToAngle(midHour);
+          const labelRadius = ringRadius; // Center of ring
+          const x = center + Math.cos(midAngle) * labelRadius;
+          const y = center + Math.sin(midAngle) * labelRadius;
+          const modeColor = MODE_COLORS[span.mode];
+          const isHovered = hoveredMode === span.mode;
+          const isDimmed = hoveredMode !== null && !isHovered;
+
+          return (
+            <text
+              key={`mode-${span.mode}-${span.startHour}`}
+              x={x}
+              y={y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={isDimmed ? '#9ca3af' : '#ffffff'}
+              fontSize="10"
+              fontWeight="700"
+              style={{
+                textShadow: `0 1px 2px ${modeColor}`,
+                pointerEvents: 'none',
+                opacity: isDimmed ? 0.4 : 1,
+              }}
+            >
+              {MODE_ABBREV[span.mode]}
+            </text>
           );
         })}
 

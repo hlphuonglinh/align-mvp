@@ -19,6 +19,7 @@ interface GovernorDisplayProps {
   hoveredMode?: BaselineMode | null;
   onModeHover?: (mode: BaselineMode | null) => void;
   onEditConflict?: (constraintId: string) => void;
+  baselineWindows?: Array<{ mode: string; start: string; end: string }>;
 }
 
 export function GovernorDisplay({
@@ -28,6 +29,7 @@ export function GovernorDisplay({
   hoveredMode,
   onModeHover,
   onEditConflict,
+  baselineWindows = [],
 }: GovernorDisplayProps) {
   // Extract unavailable times from constraints
   const unavailableTimes = extractUnavailableTimes(
@@ -100,6 +102,7 @@ export function GovernorDisplay({
               isDimmed={hoveredMode !== null && hoveredMode !== modeWindow.mode}
               onHover={(mode) => onModeHover?.(mode as BaselineMode | null)}
               onEditConflict={onEditConflict}
+              baselineWindows={baselineWindows}
             />
           ))}
         </div>

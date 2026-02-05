@@ -24,6 +24,7 @@ interface ModeStateDisplayProps {
   onHover?: (mode: string | null) => void;
   onEditConflict?: (id: string) => void;
   onHighlightConflict?: (conflict: { start: string; end: string }) => void;
+  baselineWindows?: Array<{ mode: string; start: string; end: string }>;
 }
 
 /**
@@ -100,6 +101,29 @@ function isWarningState(state: ModeStateValue): boolean {
 }
 
 /**
+ * Get mode-specific failure risk description.
+ * Describes the CONSEQUENCE of context rebuilding, not the structure.
+ */
+function getModeFailureRisk(mode: Mode, segmentCount: number): string {
+  const rebuildText = segmentCount > 2 ? 'multiple context switches' : 'rebuilding context';
+
+  switch (mode) {
+    case 'FRAMING':
+      return `${rebuildText} often leads to solving the wrong problem cleanly`;
+    case 'SYNTHESIS':
+      return `${rebuildText} often leads to partial integration that feels complete`;
+    case 'EVALUATION':
+      return `${rebuildText} often leads to confident decisions based on incomplete assessment`;
+    case 'EXECUTION':
+      return `${rebuildText} reduces throughput but errors remain immediately visible`;
+    case 'REFLECTION':
+      return `${rebuildText} disrupts the stepping-back process`;
+    default:
+      return `${rebuildText} degrades cognitive reliability`;
+  }
+}
+
+/**
  * Get border color for card based on state.
  */
 function getCardBorderColor(state: ModeStateValue, mode: Mode): string {
@@ -135,6 +159,16 @@ function getWindowWidthPercent(window: { start: string; end: string }): number {
   return (duration / (24 * 60)) * 100;
 }
 
+/**
+ * Convert ISO datetime string to HH:mm format.
+ */
+function isoToHHMM(iso: string): string {
+  const date = new Date(iso);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 export function ModeStateDisplay({
   modeWindow,
   isHovered = false,
@@ -142,6 +176,7 @@ export function ModeStateDisplay({
   onHover,
   onEditConflict,
   onHighlightConflict,
+  baselineWindows = [],
 }: ModeStateDisplayProps) {
   // Auto-expand flagged modes (non-INTACT, non-AVAILABLE) to show structural cause immediately
   const initialExpanded = !['INTACT', 'AVAILABLE'].includes(modeWindow.state);
@@ -154,12 +189,21 @@ export function ModeStateDisplay({
   const hasFragmentation = fragmentation.hasFragmentation;
   const hasDetails = failureSignature.applicationExamples || failureSignature.examples || failureSignature.overrideAdvice || hasFragmentation;
 
-  // Always show full baseline window
-  const baselineDisplay = fragmentation.baselineWindow.start && fragmentation.baselineWindow.end
-    ? `${fragmentation.baselineWindow.start} – ${fragmentation.baselineWindow.end}`
-    : window.start && window.end
-    ? `${window.start} – ${window.end}`
-    : '';
+  // Always show full baseline window - with fallback to baselineWindows lookup
+  const baselineDisplay = (() => {
+    if (fragmentation.baselineWindow.start && fragmentation.baselineWindow.end) {
+      return `${fragmentation.baselineWindow.start} – ${fragmentation.baselineWindow.end}`;
+    }
+    if (window.start && window.end) {
+      return `${window.start} – ${window.end}`;
+    }
+    // Fallback to baselineWindows lookup for WITHHELD/SILENCE states
+    const bw = baselineWindows.find(b => b.mode === mode);
+    if (bw) {
+      return `${isoToHHMM(bw.start)} – ${isoToHHMM(bw.end)}`;
+    }
+    return '';
+  })();
 
   // Available portions display for fragmented states
   const availableDisplay = hasFragmentation && fragmentation.availablePortions.length > 0
@@ -264,7 +308,7 @@ export function ModeStateDisplay({
         <div style={{ marginTop: spacing.sm, marginBottom: spacing.sm }}>
           <div style={{
             position: 'relative',
-            height: '8px',
+            height: '16px',
             backgroundColor: '#e5e7eb',
             borderRadius: '4px',
             overflow: 'hidden',
@@ -377,6 +421,11 @@ export function ModeStateDisplay({
                     lineHeight: 1.6,
                   }}>
                     {failureSignature.structuralCause(fragmentation)}
+                    {fragmentation.totalAvailableMinutes > 0 && (
+                      <span style={{ display: 'block', marginTop: spacing.xs }}>
+                        Available: {fragmentation.availablePortions.map(p => `${p.start}–${p.end}`).join(', ')} ({fragmentation.totalAvailableMinutes} min total)
+                      </span>
+                    )}
                   </p>
                   <p style={{
                     ...typography.label,
@@ -392,7 +441,7 @@ export function ModeStateDisplay({
                     margin: 0,
                     lineHeight: 1.6,
                   }}>
-                    {failureSignature.consequence}
+                    {getModeFailureRisk(mode, fragmentation.availablePortions.length)}
                   </p>
                 </div>
               )}
@@ -487,32 +536,7 @@ export function ModeStateDisplay({
                 </div>
               )}
 
-              {/* Warning-specific examples - shown only for warning states */}
-              {hasWarning && failureSignature.examples && failureSignature.examples.length > 0 && (
-                <div style={{ marginBottom: spacing.md }}>
-                  <p style={{
-                    ...typography.label,
-                    color: colors.text.muted,
-                    marginBottom: spacing.xs,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontSize: '0.6875rem',
-                  }}>
-                    Consider waiting for:
-                  </p>
-                  <ul style={{
-                    margin: 0,
-                    paddingLeft: spacing.lg,
-                    ...typography.bodySmall,
-                    color: colors.text.secondary,
-                  }}>
-                    {failureSignature.examples.map((example, i) => (
-                      <li key={i} style={{ marginBottom: spacing.xs }}>{example}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* NOTE: "Consider waiting for" section removed - was duplicating "Use this window for" content */}
 
               {/* Override advice */}
               {hasWarning && failureSignature.overrideAdvice && (
