@@ -83,6 +83,45 @@ export const colors = {
     primary: '#6b6460',      // Warm neutral accent
     subtle: 'rgba(107, 100, 96, 0.1)',
   },
+
+  // Mode-specific colors (chromatically distinct)
+  modes: {
+    FRAMING: {
+      primary: '#8b5cf6',      // Purple
+      bg: 'rgba(139, 92, 246, 0.08)',
+      border: 'rgba(139, 92, 246, 0.20)',
+      clock: 'rgba(139, 92, 246, 0.65)',
+      text: '#6d28d9',
+    },
+    SYNTHESIS: {
+      primary: '#06b6d4',      // Cyan
+      bg: 'rgba(6, 182, 212, 0.08)',
+      border: 'rgba(6, 182, 212, 0.20)',
+      clock: 'rgba(6, 182, 212, 0.65)',
+      text: '#0891b2',
+    },
+    EVALUATION: {
+      primary: '#f59e0b',      // Amber
+      bg: 'rgba(245, 158, 11, 0.08)',
+      border: 'rgba(245, 158, 11, 0.20)',
+      clock: 'rgba(245, 158, 11, 0.65)',
+      text: '#d97706',
+    },
+    EXECUTION: {
+      primary: '#10b981',      // Green
+      bg: 'rgba(16, 185, 129, 0.08)',
+      border: 'rgba(16, 185, 129, 0.20)',
+      clock: 'rgba(16, 185, 129, 0.65)',
+      text: '#059669',
+    },
+    REFLECTION: {
+      primary: '#ec4899',      // Pink
+      bg: 'rgba(236, 72, 153, 0.08)',
+      border: 'rgba(236, 72, 153, 0.20)',
+      clock: 'rgba(236, 72, 153, 0.65)',
+      text: '#db2777',
+    },
+  },
 } as const;
 
 /**
