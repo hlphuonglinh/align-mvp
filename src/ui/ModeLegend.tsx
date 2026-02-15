@@ -34,7 +34,7 @@ const STATE_BADGES: Record<ModeStateValue, { label: string; color: string; bgCol
   INTACT: { label: 'Intact', color: '#059669', bgColor: '#d1fae5' },
   AVAILABLE: { label: 'Available', color: '#2563eb', bgColor: '#dbeafe' },
   FRAGMENTED: { label: 'Fragmented', color: '#d97706', bgColor: '#fef3c7' },
-  DEFERRED: { label: 'Deferred', color: '#7c3aed', bgColor: '#ede9fe' },
+  DEFERRED: { label: 'Disrupted', color: '#7c3aed', bgColor: '#ede9fe' },  // Disrupted reflects structural reality
   STRAINED: { label: 'Strained', color: '#ea580c', bgColor: '#ffedd5' },
   WITHHELD: { label: 'Withheld', color: '#6b7280', bgColor: '#f3f4f6' },
   SILENCE: { label: 'Silent', color: '#6b7280', bgColor: '#f3f4f6' },
@@ -95,7 +95,10 @@ function getOverlapRange(
 }
 
 /**
- * Detect all overlapping mode pairs.
+ * Detect all overlapping mode sets and merge redundant callouts.
+ * Returns one callout per unique mode-set with the full overlap range.
+ *
+ * Priority hierarchy (hardcoded): Evaluation > Framing > Synthesis > Execution > Reflection
  */
 function detectOverlaps(modeWindows: ModeWindow[]): Array<{
   modes: Mode[];
@@ -106,8 +109,14 @@ function detectOverlaps(modeWindows: ModeWindow[]): Array<{
     mw => mw.state !== 'SILENCE' && mw.fragmentation.baselineWindow.start
   );
 
-  const overlaps: Array<{ modes: Mode[]; timeRange: string; dominantMode: Mode }> = [];
-  const seen = new Set<string>();
+  if (validModes.length < 2) return [];
+
+  // Step 1: Find all pairwise overlaps with their time ranges
+  const rawOverlaps: Array<{
+    modes: Set<Mode>;
+    startMins: number;
+    endMins: number;
+  }> = [];
 
   for (let i = 0; i < validModes.length; i++) {
     for (let j = i + 1; j < validModes.length; j++) {
@@ -120,35 +129,97 @@ function detectOverlaps(modeWindows: ModeWindow[]): Array<{
       );
 
       if (overlapRange) {
-        const key = `${overlapRange.start}-${overlapRange.end}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-
-          // Find all modes that overlap in this range
-          const overlapModes = validModes
-            .filter(mw => windowsOverlap(mw.fragmentation.baselineWindow, overlapRange))
-            .map(mw => mw.mode);
-
-          // Determine dominant mode
-          let dominantMode = overlapModes[0];
-          for (const mode of MODE_PRECEDENCE) {
-            if (overlapModes.includes(mode)) {
-              dominantMode = mode;
-              break;
-            }
+        // Find ALL modes that overlap with this specific range
+        const overlapModes = new Set<Mode>();
+        for (const mw of validModes) {
+          if (windowsOverlap(mw.fragmentation.baselineWindow, overlapRange)) {
+            overlapModes.add(mw.mode);
           }
-
-          overlaps.push({
-            modes: overlapModes,
-            timeRange: `${overlapRange.start}–${overlapRange.end}`,
-            dominantMode,
-          });
         }
+
+        rawOverlaps.push({
+          modes: overlapModes,
+          startMins: timeToMinutes(overlapRange.start),
+          endMins: timeToMinutes(overlapRange.end),
+        });
       }
     }
   }
 
-  return overlaps;
+  // Step 2: Merge overlaps that have the same mode-set
+  // Group by sorted mode-set key
+  const groupedByModes: Map<string, Array<{ startMins: number; endMins: number }>> = new Map();
+
+  for (const overlap of rawOverlaps) {
+    // Sort modes by precedence order for consistent key
+    const sortedModes = [...overlap.modes].sort((a, b) => {
+      const aIdx = MODE_PRECEDENCE.indexOf(a);
+      const bIdx = MODE_PRECEDENCE.indexOf(b);
+      return aIdx - bIdx;
+    });
+    const key = sortedModes.join(',');
+
+    if (!groupedByModes.has(key)) {
+      groupedByModes.set(key, []);
+    }
+    groupedByModes.get(key)!.push({ startMins: overlap.startMins, endMins: overlap.endMins });
+  }
+
+  // Step 3: For each mode-set, merge overlapping intervals and create a single callout
+  const result: Array<{ modes: Mode[]; timeRange: string; dominantMode: Mode }> = [];
+
+  for (const [modeKey, intervals] of groupedByModes.entries()) {
+    const modes = modeKey.split(',') as Mode[];
+
+    // Sort intervals by start time
+    intervals.sort((a, b) => a.startMins - b.startMins);
+
+    // Merge overlapping intervals
+    const merged: Array<{ startMins: number; endMins: number }> = [];
+    for (const interval of intervals) {
+      if (merged.length === 0 || merged[merged.length - 1].endMins < interval.startMins) {
+        merged.push({ ...interval });
+      } else {
+        // Overlapping - extend the current interval
+        merged[merged.length - 1].endMins = Math.max(
+          merged[merged.length - 1].endMins,
+          interval.endMins
+        );
+      }
+    }
+
+    // Determine dominant mode using priority hierarchy
+    // Priority: Evaluation > Framing > Synthesis > Execution > Reflection
+    let dominantMode = modes[0];
+    for (const mode of MODE_PRECEDENCE) {
+      if (modes.includes(mode)) {
+        dominantMode = mode;
+        break;
+      }
+    }
+
+    // Create callout for each merged interval (usually just one)
+    for (const interval of merged) {
+      const startTime = `${Math.floor(interval.startMins / 60).toString().padStart(2, '0')}:${(interval.startMins % 60).toString().padStart(2, '0')}`;
+      const endTime = `${Math.floor(interval.endMins / 60).toString().padStart(2, '0')}:${(interval.endMins % 60).toString().padStart(2, '0')}`;
+
+      result.push({
+        modes,
+        timeRange: `${startTime}–${endTime}`,
+        dominantMode,
+      });
+    }
+  }
+
+  // Sort results by number of modes (more modes = more important callout) and then by time
+  result.sort((a, b) => {
+    if (b.modes.length !== a.modes.length) {
+      return b.modes.length - a.modes.length;
+    }
+    return timeToMinutes(a.timeRange.split('–')[0]) - timeToMinutes(b.timeRange.split('–')[0]);
+  });
+
+  return result;
 }
 
 /**
@@ -312,29 +383,36 @@ export function ModeLegend({
       {/* Overlap indicators */}
       {overlaps.length > 0 && (
         <div style={{ marginTop: spacing.md }}>
-          {overlaps.map((overlap, idx) => (
-            <div
-              key={idx}
-              style={{
-                marginTop: spacing.sm,
-                padding: spacing.md,
-                backgroundColor: '#fef3c7',
-                borderLeft: '3px solid #f59e0b',
-                borderRadius: radius.sm,
-                fontSize: '0.75rem',
-                lineHeight: 1.5,
-                color: '#92400e',
-              }}
-            >
-              <strong>
-                {overlap.modes.length} modes overlap {overlap.timeRange}
-              </strong>
-              <br />
-              <span style={{ color: '#b45309' }}>
-                {MODE_LABELS[overlap.dominantMode]} takes priority for high-stakes decisions.
-              </span>
-            </div>
-          ))}
+          {overlaps.map((overlap, idx) => {
+            // Format mode names for display with proper grammar
+            const modeLabels = overlap.modes.map(m => MODE_LABELS[m]);
+            const modeNames = modeLabels.length <= 2
+              ? modeLabels.join(' and ')
+              : `${modeLabels.slice(0, -1).join(', ')}, and ${modeLabels[modeLabels.length - 1]}`;
+            return (
+              <div
+                key={idx}
+                style={{
+                  marginTop: spacing.sm,
+                  padding: spacing.md,
+                  backgroundColor: '#fef3c7',
+                  borderLeft: '3px solid #f59e0b',
+                  borderRadius: radius.sm,
+                  fontSize: '0.75rem',
+                  lineHeight: 1.5,
+                  color: '#92400e',
+                }}
+              >
+                <strong>
+                  {modeNames} overlap {overlap.timeRange}
+                </strong>
+                <br />
+                <span style={{ color: '#b45309' }}>
+                  {MODE_LABELS[overlap.dominantMode]} takes priority for high-stakes decisions.
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

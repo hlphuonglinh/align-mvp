@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 import type { ModeWindow, ModeStateValue, Mode } from '../types/modeStates.js';
-import { DISCOVERY_WINDOW_LABELS } from '../constants/failureSignatures.js';
+// Discovery labels no longer used directly - plain English messages shown instead
 import { colors, radius, spacing, typography, transitions } from './tokens.js';
 
 interface ModeStateDisplayProps {
@@ -22,9 +22,95 @@ interface ModeStateDisplayProps {
   isHovered?: boolean;
   isDimmed?: boolean;
   onHover?: (mode: string | null) => void;
-  onEditConflict?: (id: string) => void;
-  onHighlightConflict?: (conflict: { start: string; end: string }) => void;
   baselineWindows?: Array<{ mode: string; start: string; end: string }>;
+  /** Post-lunch dip window if applicable (from chronotype template) */
+  postLunchDip?: { start: string; end: string } | null;
+  /** Selected date for determining temporal status (YYYY-MM-DD) */
+  selectedDate?: string;
+  /** Whether to start collapsed (for clean/passed modes) */
+  defaultCollapsed?: boolean;
+}
+
+/**
+ * Temporal status for time-aware badges.
+ */
+type TemporalStatus = 'upcoming' | 'active' | 'passed';
+
+/**
+ * Get temporal status of a window based on current time and selected date.
+ * Returns: 'upcoming' if before window, 'active' if inside, 'passed' if after.
+ * Handles split windows (returns 'active' if in ANY segment).
+ */
+function getTemporalStatus(
+  windows: Array<{ start: string; end: string }>,
+  selectedDate: string
+): { status: TemporalStatus; nextAt?: string } {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  // If viewing future date, all windows are upcoming
+  if (selectedDate > todayStr) {
+    return { status: 'upcoming' };
+  }
+
+  // If viewing past date, all windows have passed
+  if (selectedDate < todayStr) {
+    return { status: 'passed' };
+  }
+
+  // Viewing today - compare with current time
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  let latestEnd = 0;
+  let earliestStart: number | null = null;
+  let nextSegmentStart: number | null = null;
+
+  for (const win of windows) {
+    if (!win.start || !win.end) continue;
+
+    let winStart = timeToMinutes(win.start);
+    let winEnd = timeToMinutes(win.end);
+
+    // Handle midnight wraparound
+    if (winEnd < winStart) {
+      winEnd += 24 * 60;
+    }
+
+    // Check if current time is inside this window
+    if (currentMinutes >= winStart && currentMinutes < winEnd) {
+      return { status: 'active' };
+    }
+
+    // Track earliest start for upcoming calculation
+    if (earliestStart === null || winStart < earliestStart) {
+      earliestStart = winStart;
+    }
+
+    // Track latest end
+    if (winEnd > latestEnd) {
+      latestEnd = winEnd;
+    }
+
+    // Track next segment that starts after current time
+    if (winStart > currentMinutes && (nextSegmentStart === null || winStart < nextSegmentStart)) {
+      nextSegmentStart = winStart;
+    }
+  }
+
+  // If current time is before all windows
+  if (earliestStart !== null && currentMinutes < earliestStart) {
+    return { status: 'upcoming' };
+  }
+
+  // If there's a next segment (for split windows)
+  if (nextSegmentStart !== null) {
+    const hours = Math.floor(nextSegmentStart / 60);
+    const mins = nextSegmentStart % 60;
+    return { status: 'upcoming', nextAt: `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}` };
+  }
+
+  // Current time is after all windows
+  return { status: 'passed' };
 }
 
 /**
@@ -74,11 +160,38 @@ const STATE_COLORS: Record<ModeStateValue, { bg: string; text: string; border: s
 const STATE_LABELS: Record<ModeStateValue, string> = {
   INTACT: 'Intact',
   FRAGMENTED: 'Fragmented',
-  DEFERRED: 'Deferred',
+  DEFERRED: 'Disrupted',  // Disrupted reflects structural reality (not user choice)
   STRAINED: 'Strained',
   AVAILABLE: 'Available',
   WITHHELD: 'Withheld',
   SILENCE: 'Silent',
+};
+
+/**
+ * Temporal status colors and labels.
+ */
+const TEMPORAL_STATUS_COLORS: Record<TemporalStatus, { bg: string; text: string; border: string }> = {
+  active: {
+    bg: '#dcfce7',  // vibrant green
+    text: '#15803d',
+    border: '#86efac',
+  },
+  upcoming: {
+    bg: '#dbeafe',  // blue/neutral
+    text: '#1d4ed8',
+    border: '#93c5fd',
+  },
+  passed: {
+    bg: '#f3f4f6',  // grey/muted
+    text: '#6b7280',
+    border: '#e5e7eb',
+  },
+};
+
+const TEMPORAL_STATUS_LABELS: Record<TemporalStatus, string> = {
+  active: 'Active now',
+  upcoming: 'Upcoming',
+  passed: 'Passed',
 };
 
 /**
@@ -102,24 +215,30 @@ function isWarningState(state: ModeStateValue): boolean {
 
 /**
  * Get mode-specific failure risk description.
- * Describes the CONSEQUENCE of context rebuilding, not the structure.
+ * Describes the CONSEQUENCE of fragmentation in plain language.
  */
 function getModeFailureRisk(mode: Mode, segmentCount: number): string {
-  const rebuildText = segmentCount > 2 ? 'multiple context switches' : 'rebuilding context';
+  const isHeavy = segmentCount > 2;
 
   switch (mode) {
     case 'FRAMING':
-      return `${rebuildText} often leads to solving the wrong problem cleanly`;
+      return isHeavy
+        ? 'Heavy fragmentation makes it very likely you solve the wrong problem'
+        : 'You may solve the wrong problem without realizing it';
     case 'SYNTHESIS':
-      return `${rebuildText} often leads to partial integration that feels complete`;
+      return isHeavy
+        ? 'Heavy fragmentation makes hidden gaps very likely'
+        : 'The result may feel done but have blind spots you won\'t see until later';
     case 'EVALUATION':
-      return `${rebuildText} often leads to confident decisions based on incomplete assessment`;
+      return isHeavy
+        ? 'Heavy fragmentation makes blind spots very likely'
+        : 'Decisions may feel solid but miss what fell through the gaps';
     case 'EXECUTION':
-      return `${rebuildText} reduces throughput but errors remain immediately visible`;
+      return 'Throughput drops but errors stay visible';
     case 'REFLECTION':
-      return `${rebuildText} disrupts the stepping-back process`;
+      return 'Hard to step back when constantly interrupted';
     default:
-      return `${rebuildText} degrades cognitive reliability`;
+      return 'Fragmentation degrades reliability';
   }
 }
 
@@ -169,16 +288,67 @@ function isoToHHMM(iso: string): string {
   return `${hours}:${minutes}`;
 }
 
+/**
+ * Check if a mode window overlaps with or is adjacent to the post-lunch dip.
+ * Returns: 'inside' if dip is inside the window, 'adjacent' if within 30 min, or null if no overlap.
+ * Handles midnight wraparound for windows crossing midnight.
+ */
+function checkDipOverlap(
+  modeWindows: Array<{ start: string; end: string }>,
+  dip: { start: string; end: string }
+): 'inside' | 'adjacent' | null {
+  const dipStart = timeToMinutes(dip.start);
+  const dipEnd = timeToMinutes(dip.end);
+  const adjacencyBuffer = 30; // 30 minutes
+
+  for (const win of modeWindows) {
+    if (!win.start || !win.end) continue;
+
+    let modeStart = timeToMinutes(win.start);
+    let modeEnd = timeToMinutes(win.end);
+
+    // Handle midnight wraparound (e.g., 22:00 - 00:30 becomes 22:00 - 24:30)
+    if (modeEnd < modeStart) {
+      modeEnd += 24 * 60;
+    }
+
+    // Check if dip is fully inside the mode window
+    if (modeStart <= dipStart && dipEnd <= modeEnd) {
+      return 'inside';
+    }
+
+    // Check for actual overlap (not just adjacent)
+    if (modeStart < dipEnd && dipStart < modeEnd) {
+      return 'inside';
+    }
+
+    // Check for adjacency (within 30 minutes)
+    // Adjacent before: mode ends within 30 min before dip starts
+    // Adjacent after: mode starts within 30 min after dip ends
+    if (
+      (modeEnd >= dipStart - adjacencyBuffer && modeEnd <= dipStart) ||
+      (modeStart >= dipEnd && modeStart <= dipEnd + adjacencyBuffer)
+    ) {
+      return 'adjacent';
+    }
+  }
+
+  return null;
+}
+
 export function ModeStateDisplay({
   modeWindow,
   isHovered = false,
   isDimmed = false,
   onHover,
-  onEditConflict,
-  onHighlightConflict,
   baselineWindows = [],
+  postLunchDip = null,
+  selectedDate = new Date().toISOString().split('T')[0],
+  defaultCollapsed = false,
 }: ModeStateDisplayProps) {
-  // Auto-expand flagged modes (non-INTACT, non-AVAILABLE) to show structural cause immediately
+  // Clean modes start collapsed, flagged modes start expanded
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  // For expanded cards, controls showing extra details
   const initialExpanded = !['INTACT', 'AVAILABLE'].includes(modeWindow.state);
   const [expanded, setExpanded] = useState(initialExpanded);
 
@@ -189,18 +359,34 @@ export function ModeStateDisplay({
   const hasFragmentation = fragmentation.hasFragmentation;
   const hasDetails = failureSignature.applicationExamples || failureSignature.examples || failureSignature.overrideAdvice || hasFragmentation;
 
-  // Always show full baseline window - with fallback to baselineWindows lookup
+  // Get all baseline windows for this mode (handles split windows)
+  const modeBaselineWindows = baselineWindows.filter(b => b.mode === mode);
+  const hasSplitWindows = modeBaselineWindows.length > 1;
+
+  // Calculate temporal status for time-aware badge
+  const modeTimeWindows = modeBaselineWindows.length > 0
+    ? modeBaselineWindows.map(bw => ({ start: isoToHHMM(bw.start), end: isoToHHMM(bw.end) }))
+    : [fragmentation.baselineWindow];
+  const temporalStatus = getTemporalStatus(modeTimeWindows, selectedDate);
+  const temporalColor = TEMPORAL_STATUS_COLORS[temporalStatus.status];
+  const temporalLabel = temporalStatus.nextAt
+    ? `Next at ${temporalStatus.nextAt}`
+    : TEMPORAL_STATUS_LABELS[temporalStatus.status];
+
+  // Always show full baseline window(s) - with fallback
   const baselineDisplay = (() => {
+    // First try modeBaselineWindows (handles split windows)
+    if (modeBaselineWindows.length > 0) {
+      return modeBaselineWindows
+        .map(bw => `${isoToHHMM(bw.start)} – ${isoToHHMM(bw.end)}`)
+        .join(' + ');
+    }
+    // Fallback to fragmentation.baselineWindow
     if (fragmentation.baselineWindow.start && fragmentation.baselineWindow.end) {
       return `${fragmentation.baselineWindow.start} – ${fragmentation.baselineWindow.end}`;
     }
     if (window.start && window.end) {
       return `${window.start} – ${window.end}`;
-    }
-    // Fallback to baselineWindows lookup for WITHHELD/SILENCE states
-    const bw = baselineWindows.find(b => b.mode === mode);
-    if (bw) {
-      return `${isoToHHMM(bw.start)} – ${isoToHHMM(bw.end)}`;
     }
     return '';
   })();
@@ -210,8 +396,70 @@ export function ModeStateDisplay({
     ? fragmentation.availablePortions.map(p => `${p.start}–${p.end}`).join(', ')
     : null;
 
-  // Discovery window label
-  const discoveryLabel = DISCOVERY_WINDOW_LABELS[failureSignature.discoveryWindow];
+  // Compact single-line view for collapsed clean modes
+  if (isCollapsed && !hasWarning) {
+    return (
+      <div
+        data-testid={`mode-state-${mode.toLowerCase()}`}
+        onClick={() => setIsCollapsed(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: spacing.md,
+          padding: `${spacing.sm} ${spacing.md}`,
+          background: colors.bg.subtle,
+          border: `1px solid ${colors.border.subtle}`,
+          borderRadius: radius.md,
+          opacity: isDimmed ? 0.4 : 1,
+          transition: `opacity ${transitions.fast}, background ${transitions.fast}`,
+          cursor: 'pointer',
+        }}
+        onMouseEnter={() => onHover?.(mode)}
+        onMouseLeave={() => onHover?.(null)}
+      >
+        {/* Mode color indicator */}
+        <span style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: modeColors.primary,
+          flexShrink: 0,
+        }} />
+        {/* Mode name */}
+        <span style={{
+          fontWeight: 600,
+          fontSize: '0.875rem',
+          color: colors.text.primary,
+          minWidth: '85px',
+        }}>
+          {mode}
+        </span>
+        {/* Time range */}
+        <span style={{
+          fontFamily: "'SF Mono', 'Monaco', monospace",
+          fontSize: '0.75rem',
+          color: colors.text.muted,
+        }}>
+          {baselineDisplay}
+        </span>
+        {/* Temporal badge */}
+        <span style={{
+          marginLeft: 'auto',
+          padding: `2px 8px`,
+          background: temporalColor.bg,
+          border: `1px solid ${temporalColor.border}`,
+          borderRadius: '9999px',
+          fontSize: '0.6875rem',
+          fontWeight: 500,
+          color: temporalColor.text,
+        }}>
+          {temporalLabel}
+        </span>
+        {/* Expand indicator */}
+        <span style={{ color: colors.text.muted, fontSize: '0.75rem' }}>›</span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -220,6 +468,7 @@ export function ModeStateDisplay({
         padding: spacing.lg,
         background: hasWarning ? 'rgba(251, 191, 36, 0.05)' : modeColors.bg,
         border: `1px solid ${getCardBorderColor(state, mode)}`,
+        borderLeft: hasWarning ? '3px solid #f59e0b' : `1px solid ${getCardBorderColor(state, mode)}`,
         borderRadius: radius.md,
         opacity: isDimmed ? 0.4 : 1,
         transition: `opacity ${transitions.normal}, box-shadow ${transitions.normal}`,
@@ -256,20 +505,37 @@ export function ModeStateDisplay({
               {mode}
             </span>
 
-            {/* State badge */}
+            {/* Temporal status badge (time-aware) */}
             <span style={{
               display: 'inline-flex',
               alignItems: 'center',
               padding: `${spacing.xs} ${spacing.sm}`,
-              background: stateColor.bg,
-              border: `1px solid ${stateColor.border}`,
+              background: temporalColor.bg,
+              border: `1px solid ${temporalColor.border}`,
               borderRadius: '9999px',
               ...typography.label,
-              color: stateColor.text,
+              color: temporalColor.text,
               fontWeight: 500,
             }}>
-              {STATE_LABELS[state]}
+              {temporalLabel}
             </span>
+
+            {/* State badge (shown additionally for warning states) */}
+            {hasWarning && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: `${spacing.xs} ${spacing.sm}`,
+                background: stateColor.bg,
+                border: `1px solid ${stateColor.border}`,
+                borderRadius: '9999px',
+                ...typography.label,
+                color: stateColor.text,
+                fontWeight: 500,
+              }}>
+                {STATE_LABELS[state]}
+              </span>
+            )}
           </div>
 
           {/* Time windows - always show baseline */}
@@ -283,8 +549,52 @@ export function ModeStateDisplay({
               }}>
                 Baseline: {baselineDisplay}
               </span>
+              {hasSplitWindows && (
+                <span style={{
+                  ...typography.label,
+                  color: '#7c3aed',
+                  fontSize: '0.625rem',
+                  marginLeft: spacing.sm,
+                  padding: '1px 4px',
+                  background: '#ede9fe',
+                  borderRadius: '3px',
+                }}>
+                  SPLIT
+                </span>
+              )}
             </div>
           )}
+
+          {/* Post-lunch dip warning - only show if mode window overlaps or is adjacent */}
+          {(() => {
+            if (!postLunchDip) return null;
+
+            // Get all windows for this mode (including split windows)
+            const modeBaseWindows = modeBaselineWindows.length > 0
+              ? modeBaselineWindows.map(bw => ({ start: isoToHHMM(bw.start), end: isoToHHMM(bw.end) }))
+              : [fragmentation.baselineWindow];
+
+            const dipOverlap = checkDipOverlap(modeBaseWindows, postLunchDip);
+
+            if (!dipOverlap) return null;
+
+            const dipTime = `${postLunchDip.start}–${postLunchDip.end}`;
+
+            return (
+              <div style={{ marginBottom: spacing.xs }}>
+                <span style={{
+                  ...typography.label,
+                  fontFamily: "'SF Mono', 'Monaco', monospace",
+                  color: '#92400e',
+                  fontSize: '0.6875rem',
+                }}>
+                  {dipOverlap === 'inside'
+                    ? `⚠️ Energy dip expected ${dipTime}. Front-load demanding work before ${postLunchDip.start}.`
+                    : `⚠️ Energy dip nearby (${dipTime})`}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Available portions - show if fragmented */}
           {hasFragmentation && availableDisplay && (
@@ -303,12 +613,12 @@ export function ModeStateDisplay({
         </div>
       </div>
 
-      {/* Mini timeline bar */}
-      {fragmentation.baselineWindow.start && fragmentation.baselineWindow.end && (
-        <div style={{ marginTop: spacing.sm, marginBottom: spacing.sm }}>
+      {/* Mini timeline bar - subtle, smaller */}
+      {hasFragmentation && fragmentation.baselineWindow.start && fragmentation.baselineWindow.end && (
+        <div style={{ marginTop: spacing.xs, marginBottom: spacing.sm, opacity: 0.7 }}>
           <div style={{
             position: 'relative',
-            height: '16px',
+            height: '8px',
             backgroundColor: '#e5e7eb',
             borderRadius: '4px',
             overflow: 'hidden',
@@ -320,7 +630,7 @@ export function ModeStateDisplay({
               width: `${getWindowWidthPercent(fragmentation.baselineWindow)}%`,
               height: '100%',
               backgroundColor: modeColors.primary,
-              opacity: 0.85,
+              opacity: 0.6,
             }} />
 
             {/* Unavailable blocks (red overlays) */}
@@ -333,34 +643,20 @@ export function ModeStateDisplay({
                   width: `${getWindowWidthPercent(conflict)}%`,
                   height: '100%',
                   backgroundColor: '#dc2626',
-                  opacity: 0.7,
+                  opacity: 0.5,
                 }}
               />
             ))}
           </div>
-
-          {/* Time labels */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: '3px',
-            fontSize: '0.5625rem',
-            color: colors.text.muted,
-            fontFamily: "'SF Mono', 'Monaco', monospace",
-          }}>
-            <span>12a</span>
-            <span>6a</span>
-            <span>12p</span>
-            <span>6p</span>
-            <span>12a</span>
-          </div>
         </div>
       )}
 
-      {/* Consequence text */}
+      {/* Consequence text - warning headline, most prominent */}
       <p style={{
         ...typography.bodySmall,
-        color: hasWarning ? colors.text.secondary : colors.text.tertiary,
+        color: hasWarning ? '#92400e' : colors.text.tertiary,
+        fontWeight: hasWarning ? 500 : 400,
+        fontSize: hasWarning ? '0.875rem' : '0.8125rem',
         margin: 0,
         lineHeight: 1.5,
       }}>
@@ -446,97 +742,27 @@ export function ModeStateDisplay({
                 </div>
               )}
 
-              {/* Application examples - shown for ALL states */}
+              {/* Application examples - compact display */}
               {failureSignature.applicationExamples && failureSignature.applicationExamples.length > 0 && (
-                <div style={{ marginBottom: spacing.md }}>
+                <div style={{
+                  marginBottom: spacing.md,
+                  padding: spacing.sm,
+                  background: colors.bg.subtle,
+                  borderRadius: radius.sm,
+                }}>
                   <p style={{
-                    ...typography.label,
+                    ...typography.caption,
                     color: colors.text.muted,
-                    marginBottom: spacing.xs,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontSize: '0.6875rem',
-                  }}>
-                    Use this window for:
-                  </p>
-                  <ul style={{
                     margin: 0,
-                    paddingLeft: spacing.lg,
-                    ...typography.bodySmall,
-                    color: colors.text.secondary,
                   }}>
-                    {failureSignature.applicationExamples.map((example, i) => (
-                      <li key={i} style={{ marginBottom: spacing.xs }}>{example}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Conflicting unavailable times - from fragmentation analysis */}
-              {hasFragmentation && fragmentation.conflicts.length > 0 && (
-                <div style={{ marginBottom: spacing.md }}>
-                  <p style={{
-                    ...typography.label,
-                    color: '#dc2626',
-                    marginBottom: spacing.xs,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontSize: '0.6875rem',
-                  }}>
-                    Conflicting unavailable times:
+                    <span style={{ fontWeight: 500 }}>Examples:</span>{' '}
+                    {failureSignature.applicationExamples.slice(0, 3).join(', ')}
+                    {failureSignature.applicationExamples.length > 3 && '...'}
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-                    {fragmentation.conflicts.map((conflict) => (
-                      <div
-                        key={conflict.id}
-                        onClick={() => onHighlightConflict?.({ start: conflict.start, end: conflict.end })}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: `${spacing.xs} ${spacing.sm}`,
-                          background: '#fee2e2',
-                          border: '1px solid #fca5a5',
-                          borderRadius: radius.sm,
-                          cursor: onHighlightConflict ? 'pointer' : 'default',
-                        }}
-                      >
-                        <span style={{
-                          ...typography.bodySmall,
-                          fontFamily: "'SF Mono', 'Monaco', monospace",
-                          color: colors.text.secondary,
-                        }}>
-                          {conflict.start} – {conflict.end}
-                        </span>
-                        {onEditConflict && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditConflict(conflict.id);
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              padding: `${spacing.xs} ${spacing.sm}`,
-                              cursor: 'pointer',
-                              ...typography.label,
-                              color: '#dc2626',
-                              fontWeight: 600,
-                              textDecoration: 'underline',
-                            }}
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
 
-              {/* NOTE: "Consider waiting for" section removed - was duplicating "Use this window for" content */}
+              {/* NOTE: Conflicting unavailable times moved to left column in layout */}
 
               {/* Override advice */}
               {hasWarning && failureSignature.overrideAdvice && (
@@ -558,72 +784,34 @@ export function ModeStateDisplay({
                 </div>
               )}
 
-              {/* Discovery window - shown for warning states */}
-              {hasWarning && (
+              {/* Timing notice - shown for warning states with non-immediate discovery */}
+              {hasWarning && failureSignature.discoveryWindow !== 'IMMEDIATE' && (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: spacing.xs,
                   marginBottom: spacing.md,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  background: failureSignature.discoveryWindow === 'TOO_LATE'
+                    ? '#fef2f2'
+                    : '#fefce8',
+                  borderRadius: radius.sm,
                 }}>
                   <span style={{
                     ...typography.label,
-                    color: colors.text.muted,
-                  }}>
-                    Discovery:
-                  </span>
-                  <span style={{
-                    ...typography.label,
                     color: failureSignature.discoveryWindow === 'TOO_LATE'
-                      ? colors.status.caution.text
-                      : failureSignature.discoveryWindow === 'TOMORROW'
-                      ? colors.status.fragmented.text
-                      : colors.text.tertiary,
+                      ? '#b91c1c'
+                      : '#a16207',
                     fontWeight: 500,
                   }}>
-                    {discoveryLabel}
+                    {failureSignature.discoveryWindow === 'TOO_LATE'
+                      ? "If something goes wrong, you might not realize until it's too late to fix"
+                      : "If something goes wrong, you'll likely notice by tomorrow"}
                   </span>
                 </div>
               )}
 
-              {/* Action buttons - shown for warning states */}
-              {hasWarning && (
-                <div style={{ display: 'flex', gap: spacing.sm }}>
-                  <button
-                    style={{
-                      flex: 1,
-                      ...typography.bodySmall,
-                      background: colors.bg.hover,
-                      color: colors.text.secondary,
-                      border: `1px solid ${colors.border.light}`,
-                      borderRadius: radius.sm,
-                      padding: `${spacing.sm} ${spacing.md}`,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Do it anyway
-                  </button>
-
-                  {(state === 'DEFERRED' || hasFragmentation) && (
-                    <button
-                      style={{
-                        flex: 1,
-                        ...typography.bodySmall,
-                        background: colors.text.primary,
-                        color: colors.bg.page,
-                        border: 'none',
-                        borderRadius: radius.sm,
-                        padding: `${spacing.sm} ${spacing.md}`,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {state === 'DEFERRED' ? 'Schedule for later' : 'Clear conflicts'}
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* Note: Action buttons removed - "Do it anyway" and "Clear conflicts" had no functionality */}
             </div>
           )}
         </div>

@@ -438,7 +438,7 @@ describe('Canon Quiz Validation', () => {
 });
 
 // ============================================================================
-// WINDOW TEMPLATE DRIFT TESTS
+// WINDOW TEMPLATE DRIFT TESTS (v5.0 Biologically Honest Reliability Windows)
 // ============================================================================
 
 describe('Canon Window Templates', () => {
@@ -446,111 +446,116 @@ describe('Canon Window Templates', () => {
     expect(ALL_CANON_MODES).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
   });
 
-  describe('AURORA windows', () => {
-    it('FRAMING: 06:00–08:00', () => {
-      expect(AURORA_WINDOWS.FRAMING).toEqual({ start: '06:00', end: '08:00' });
+  // v5.0: Updated windows based on MSFsc research
+  describe('AURORA windows (v5.0)', () => {
+    it('FRAMING: 07:00–09:00', () => {
+      expect(AURORA_WINDOWS.FRAMING).toEqual({ start: '07:00', end: '09:00' });
     });
-    it('EVALUATION: 07:00–09:00', () => {
-      expect(AURORA_WINDOWS.EVALUATION).toEqual({ start: '07:00', end: '09:00' });
+    it('EVALUATION: 08:00–10:30', () => {
+      expect(AURORA_WINDOWS.EVALUATION).toEqual({ start: '08:00', end: '10:30' });
     });
-    it('SYNTHESIS: 06:30–09:00', () => {
-      expect(AURORA_WINDOWS.SYNTHESIS).toEqual({ start: '06:30', end: '09:00' });
-    });
-    it('EXECUTION: 09:00–12:30', () => {
-      expect(AURORA_WINDOWS.EXECUTION).toEqual({ start: '09:00', end: '12:30' });
-    });
-    it('REFLECTION: 18:00–20:00', () => {
-      expect(AURORA_WINDOWS.REFLECTION).toEqual({ start: '18:00', end: '20:00' });
-    });
-  });
-
-  describe('DAYBREAK windows', () => {
-    it('FRAMING: 08:00–10:00', () => {
-      expect(DAYBREAK_WINDOWS.FRAMING).toEqual({ start: '08:00', end: '10:00' });
-    });
-    it('EVALUATION: 09:00–11:00', () => {
-      expect(DAYBREAK_WINDOWS.EVALUATION).toEqual({ start: '09:00', end: '11:00' });
-    });
-    it('SYNTHESIS: 08:30–11:00', () => {
-      expect(DAYBREAK_WINDOWS.SYNTHESIS).toEqual({ start: '08:30', end: '11:00' });
+    it('SYNTHESIS: 07:30–11:00', () => {
+      expect(AURORA_WINDOWS.SYNTHESIS).toEqual({ start: '07:30', end: '11:00' });
     });
     it('EXECUTION: 11:00–15:00', () => {
-      expect(DAYBREAK_WINDOWS.EXECUTION).toEqual({ start: '11:00', end: '15:00' });
+      expect(AURORA_WINDOWS.EXECUTION).toEqual({ start: '11:00', end: '15:00' });
     });
-    it('REFLECTION: 20:00–21:30', () => {
-      expect(DAYBREAK_WINDOWS.REFLECTION).toEqual({ start: '20:00', end: '21:30' });
-    });
-  });
-
-  describe('MERIDIAN windows', () => {
-    it('FRAMING: 10:00–12:00', () => {
-      expect(MERIDIAN_WINDOWS.FRAMING).toEqual({ start: '10:00', end: '12:00' });
-    });
-    it('EVALUATION: 11:00–13:30', () => {
-      expect(MERIDIAN_WINDOWS.EVALUATION).toEqual({ start: '11:00', end: '13:30' });
-    });
-    it('SYNTHESIS: 10:30–13:30', () => {
-      expect(MERIDIAN_WINDOWS.SYNTHESIS).toEqual({ start: '10:30', end: '13:30' });
-    });
-    it('EXECUTION: 14:00–17:00', () => {
-      expect(MERIDIAN_WINDOWS.EXECUTION).toEqual({ start: '14:00', end: '17:00' });
-    });
-    it('REFLECTION: 18:00–20:00', () => {
-      expect(MERIDIAN_WINDOWS.REFLECTION).toEqual({ start: '18:00', end: '20:00' });
+    it('REFLECTION: 19:00–21:00', () => {
+      expect(AURORA_WINDOWS.REFLECTION).toEqual({ start: '19:00', end: '21:00' });
     });
   });
 
-  describe('TWILIGHT windows', () => {
-    it('FRAMING: 13:00–15:00', () => {
-      expect(TWILIGHT_WINDOWS.FRAMING).toEqual({ start: '13:00', end: '15:00' });
+  describe('DAYBREAK windows (v5.0)', () => {
+    it('FRAMING: 09:00–11:00', () => {
+      expect(DAYBREAK_WINDOWS.FRAMING).toEqual({ start: '09:00', end: '11:00' });
     });
-    it('EVALUATION: 15:00–17:00', () => {
-      expect(TWILIGHT_WINDOWS.EVALUATION).toEqual({ start: '15:00', end: '17:00' });
+    it('EVALUATION: 10:00–12:30', () => {
+      expect(DAYBREAK_WINDOWS.EVALUATION).toEqual({ start: '10:00', end: '12:30' });
     });
-    it('SYNTHESIS: 14:00–17:00', () => {
-      expect(TWILIGHT_WINDOWS.SYNTHESIS).toEqual({ start: '14:00', end: '17:00' });
+    it('SYNTHESIS: 09:30–13:00', () => {
+      expect(DAYBREAK_WINDOWS.SYNTHESIS).toEqual({ start: '09:30', end: '13:00' });
     });
-    it('EXECUTION: 17:00–20:00', () => {
-      expect(TWILIGHT_WINDOWS.EXECUTION).toEqual({ start: '17:00', end: '20:00' });
+    it('EXECUTION: 13:00–17:00', () => {
+      expect(DAYBREAK_WINDOWS.EXECUTION).toEqual({ start: '13:00', end: '17:00' });
     });
-    it('REFLECTION: 21:00–22:30', () => {
-      expect(TWILIGHT_WINDOWS.REFLECTION).toEqual({ start: '21:00', end: '22:30' });
-    });
-  });
-
-  describe('NOCTURNE windows', () => {
-    it('FRAMING: 18:30–20:30', () => {
-      expect(NOCTURNE_WINDOWS.FRAMING).toEqual({ start: '18:30', end: '20:30' });
-    });
-    it('EVALUATION: 20:00–22:00', () => {
-      expect(NOCTURNE_WINDOWS.EVALUATION).toEqual({ start: '20:00', end: '22:00' });
-    });
-    it('SYNTHESIS: 19:00–22:00', () => {
-      expect(NOCTURNE_WINDOWS.SYNTHESIS).toEqual({ start: '19:00', end: '22:00' });
-    });
-    it('EXECUTION: 14:00–18:00', () => {
-      expect(NOCTURNE_WINDOWS.EXECUTION).toEqual({ start: '14:00', end: '18:00' });
-    });
-    it('REFLECTION: 22:00–23:00', () => {
-      expect(NOCTURNE_WINDOWS.REFLECTION).toEqual({ start: '22:00', end: '23:00' });
+    it('REFLECTION: 20:00–22:00', () => {
+      expect(DAYBREAK_WINDOWS.REFLECTION).toEqual({ start: '20:00', end: '22:00' });
     });
   });
 
-  describe('Focus envelopes', () => {
-    it('AURORA: 05:30–09:30', () => {
-      expect(FOCUS_ENVELOPES.AURORA).toEqual({ start: '05:30', end: '09:30' });
+  describe('MERIDIAN windows (v5.0)', () => {
+    it('FRAMING: 10:30–12:30', () => {
+      expect(MERIDIAN_WINDOWS.FRAMING).toEqual({ start: '10:30', end: '12:30' });
     });
-    it('DAYBREAK: 07:00–11:00', () => {
-      expect(FOCUS_ENVELOPES.DAYBREAK).toEqual({ start: '07:00', end: '11:00' });
+    it('EVALUATION: 11:30–14:30', () => {
+      expect(MERIDIAN_WINDOWS.EVALUATION).toEqual({ start: '11:30', end: '14:30' });
     });
-    it('MERIDIAN: 10:00–14:00', () => {
-      expect(FOCUS_ENVELOPES.MERIDIAN).toEqual({ start: '10:00', end: '14:00' });
+    it('SYNTHESIS: 11:00–15:00', () => {
+      expect(MERIDIAN_WINDOWS.SYNTHESIS).toEqual({ start: '11:00', end: '15:00' });
     });
-    it('TWILIGHT: 13:00–17:00', () => {
-      expect(FOCUS_ENVELOPES.TWILIGHT).toEqual({ start: '13:00', end: '17:00' });
+    it('EXECUTION: 15:00–19:00', () => {
+      expect(MERIDIAN_WINDOWS.EXECUTION).toEqual({ start: '15:00', end: '19:00' });
     });
-    it('NOCTURNE: 18:00–22:30', () => {
-      expect(FOCUS_ENVELOPES.NOCTURNE).toEqual({ start: '18:00', end: '22:30' });
+    it('REFLECTION: 21:00–23:00', () => {
+      expect(MERIDIAN_WINDOWS.REFLECTION).toEqual({ start: '21:00', end: '23:00' });
+    });
+  });
+
+  // v5.0: Twilight has split Execution windows (11:00-13:00 + 18:00-21:00)
+  // The primary window (first) is used for backward compatibility
+  describe('TWILIGHT windows (v5.0)', () => {
+    it('FRAMING: 13:00–15:30', () => {
+      expect(TWILIGHT_WINDOWS.FRAMING).toEqual({ start: '13:00', end: '15:30' });
+    });
+    it('EVALUATION: 14:30–17:30', () => {
+      expect(TWILIGHT_WINDOWS.EVALUATION).toEqual({ start: '14:30', end: '17:30' });
+    });
+    it('SYNTHESIS: 13:30–18:00', () => {
+      expect(TWILIGHT_WINDOWS.SYNTHESIS).toEqual({ start: '13:30', end: '18:00' });
+    });
+    it('EXECUTION: 11:00–13:00 (primary of split)', () => {
+      expect(TWILIGHT_WINDOWS.EXECUTION).toEqual({ start: '11:00', end: '13:00' });
+    });
+    it('REFLECTION: 22:00–24:00 (crosses midnight)', () => {
+      expect(TWILIGHT_WINDOWS.REFLECTION).toEqual({ start: '22:00', end: '24:00' });
+    });
+  });
+
+  // v5.0: Nocturne has split Execution and midnight-crossing windows
+  describe('NOCTURNE windows (v5.0)', () => {
+    it('FRAMING: 21:00–23:30', () => {
+      expect(NOCTURNE_WINDOWS.FRAMING).toEqual({ start: '21:00', end: '23:30' });
+    });
+    it('EVALUATION: 22:00–24:30 (crosses midnight)', () => {
+      expect(NOCTURNE_WINDOWS.EVALUATION).toEqual({ start: '22:00', end: '24:30' });
+    });
+    it('SYNTHESIS: 19:00–23:30', () => {
+      expect(NOCTURNE_WINDOWS.SYNTHESIS).toEqual({ start: '19:00', end: '23:30' });
+    });
+    it('EXECUTION: 14:00–19:00 (primary of split)', () => {
+      expect(NOCTURNE_WINDOWS.EXECUTION).toEqual({ start: '14:00', end: '19:00' });
+    });
+    it('REFLECTION: 25:00–27:00 (01:00-03:00 next day)', () => {
+      expect(NOCTURNE_WINDOWS.REFLECTION).toEqual({ start: '25:00', end: '27:00' });
+    });
+  });
+
+  // v5.0: Updated focus envelopes
+  describe('Focus envelopes (v5.0)', () => {
+    it('AURORA: 07:00–11:00', () => {
+      expect(FOCUS_ENVELOPES.AURORA).toEqual({ start: '07:00', end: '11:00' });
+    });
+    it('DAYBREAK: 09:00–13:00', () => {
+      expect(FOCUS_ENVELOPES.DAYBREAK).toEqual({ start: '09:00', end: '13:00' });
+    });
+    it('MERIDIAN: 10:30–15:00', () => {
+      expect(FOCUS_ENVELOPES.MERIDIAN).toEqual({ start: '10:30', end: '15:00' });
+    });
+    it('TWILIGHT: 13:00–18:00', () => {
+      expect(FOCUS_ENVELOPES.TWILIGHT).toEqual({ start: '13:00', end: '18:00' });
+    });
+    it('NOCTURNE: 19:00–23:30', () => {
+      expect(FOCUS_ENVELOPES.NOCTURNE).toEqual({ start: '19:00', end: '23:30' });
     });
   });
 

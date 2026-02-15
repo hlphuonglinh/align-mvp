@@ -3,22 +3,27 @@
  *
  * Shows dominant mode per hour segment based on precedence.
  * Handles overlapping chronotypes (Aurora, etc.) cleanly.
+ * Supports split windows (Twilight/Nocturne Execution have 2 windows).
+ * Handles midnight wraparound (windows crossing midnight).
  *
  * Ring shows: Temporal flow (what's active WHEN)
  * Legend shows: All modes with full context (handled separately)
  */
 
 import { useMemo } from 'react';
-import type { BaselineMode } from '../types.js';
+import type { BaselineMode, BaselineWindow } from '../types.js';
 import type { Mode, ModeWindow } from '../types/modeStates.js';
 import { colors, typography } from './tokens.js';
 
 interface ModeRingSimplifiedProps {
   modeWindows: ModeWindow[];
+  baselineWindows?: BaselineWindow[];  // Raw baseline windows (includes split windows)
   hoveredMode?: BaselineMode | null;
   onModeHover?: (mode: BaselineMode | null) => void;
   onHourClick?: (hour: number, dominantMode: Mode | null) => void;
   size?: number;
+  /** Unavailable time blocks to show as gaps on the ring */
+  unavailableTimes?: Array<{ id: string; start: string; end: string }>;
 }
 
 // Mode precedence for overlaps (highest stakes first)
@@ -39,7 +44,7 @@ const MODE_COLORS: Record<Mode, string> = {
   REFLECTION: colors.modes.REFLECTION.primary,
 };
 
-// Mode abbreviations for ring labels
+// Mode abbreviations for ring labels (3-letter)
 const MODE_ABBREV: Record<Mode, string> = {
   EVALUATION: 'EVA',
   FRAMING: 'FRA',
@@ -48,8 +53,18 @@ const MODE_ABBREV: Record<Mode, string> = {
   REFLECTION: 'REF',
 };
 
+// 1-letter abbreviations for very small segments
+const MODE_ABBREV_SHORT: Record<Mode, string> = {
+  EVALUATION: 'E',
+  FRAMING: 'F',
+  SYNTHESIS: 'S',
+  EXECUTION: 'X',
+  REFLECTION: 'R',
+};
+
 /**
  * Convert time string (HH:MM) to minutes since midnight.
+ * Handles times > 24:00 for midnight wraparound (e.g., "25:00" = 1500 minutes = 1:00 AM next day).
  */
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
@@ -57,7 +72,65 @@ function timeToMinutes(time: string): number {
 }
 
 /**
- * Check if an hour (0-23) falls within a time window.
+ * Get start and end hours from a baseline window, handling midnight wraparound.
+ * Returns { start, end, crossesMidnight } where times are in decimal hours.
+ */
+function getWindowHours(window: { start: string; end: string }): {
+  startHours: number;
+  endHours: number;
+  crossesMidnight: boolean;
+} {
+  const startDate = new Date(window.start);
+  const endDate = new Date(window.end);
+
+  const startHours = startDate.getHours() + startDate.getMinutes() / 60;
+  let endHours = endDate.getHours() + endDate.getMinutes() / 60;
+
+  // Check if window crosses midnight (end is on a different day)
+  const crossesMidnight = endDate.getDate() !== startDate.getDate() || endHours < startHours;
+
+  // If crosses midnight, add 24 to end for calculations
+  if (crossesMidnight && endHours <= startHours) {
+    endHours += 24;
+  }
+
+  return { startHours, endHours, crossesMidnight };
+}
+
+/**
+ * Check if an hour (0-23) falls within a baseline window.
+ * Handles midnight wraparound (windows crossing midnight).
+ */
+function isHourInBaselineWindow(hour: number, window: { start: string; end: string }): boolean {
+  if (!window.start || !window.end) return false;
+
+  const { startHours, endHours, crossesMidnight } = getWindowHours(window);
+  const hourStart = hour;
+  const hourEnd = hour + 1;
+
+  if (crossesMidnight) {
+    // Window crosses midnight: check both ranges
+    // Range 1: startHours to 24 (before midnight)
+    // Range 2: 0 to endHours-24 (after midnight)
+    const normalizedEndHours = endHours - 24;
+
+    // Check if hour is in the before-midnight portion
+    if (hourStart < 24 && startHours < 24) {
+      if (hourStart < 24 && hourEnd > startHours) return true;
+    }
+    // Check if hour is in the after-midnight portion
+    if (hourStart < normalizedEndHours) return true;
+
+    return false;
+  }
+
+  // Normal window (doesn't cross midnight)
+  return hourStart < endHours && startHours < hourEnd;
+}
+
+/**
+ * Check if an hour (0-23) falls within a time window (HH:MM format).
+ * Legacy function for modeWindows compatibility.
  */
 function isHourInWindow(hour: number, window: { start: string; end: string }): boolean {
   if (!window.start || !window.end) return false;
@@ -71,7 +144,23 @@ function isHourInWindow(hour: number, window: { start: string; end: string }): b
 }
 
 /**
- * Get all active modes at a given hour.
+ * Get all active modes at a given hour using baseline windows.
+ * Handles split windows (multiple windows per mode).
+ */
+function getActiveModesAtHourFromBaseline(hour: number, baselineWindows: BaselineWindow[]): Mode[] {
+  const activeModes = new Set<Mode>();
+
+  for (const bw of baselineWindows) {
+    if (isHourInBaselineWindow(hour, { start: bw.start, end: bw.end })) {
+      activeModes.add(bw.mode as Mode);
+    }
+  }
+
+  return Array.from(activeModes);
+}
+
+/**
+ * Get all active modes at a given hour using modeWindows (legacy).
  */
 function getActiveModesAtHour(hour: number, modeWindows: ModeWindow[]): Mode[] {
   return modeWindows
@@ -81,9 +170,17 @@ function getActiveModesAtHour(hour: number, modeWindows: ModeWindow[]): Mode[] {
 
 /**
  * Get the dominant (highest precedence) mode at a given hour.
+ * Uses baselineWindows if provided, otherwise falls back to modeWindows.
  */
-function getDominantMode(hour: number, modeWindows: ModeWindow[]): Mode | null {
-  const activeModes = getActiveModesAtHour(hour, modeWindows);
+function getDominantMode(
+  hour: number,
+  modeWindows: ModeWindow[],
+  baselineWindows?: BaselineWindow[]
+): Mode | null {
+  // Use baseline windows if provided (better accuracy for split windows)
+  const activeModes = baselineWindows && baselineWindows.length > 0
+    ? getActiveModesAtHourFromBaseline(hour, baselineWindows)
+    : getActiveModesAtHour(hour, modeWindows);
 
   if (activeModes.length === 0) return null;
 
@@ -140,10 +237,12 @@ function createArcPath(
 
 export function ModeRingSimplified({
   modeWindows,
+  baselineWindows = [],
   hoveredMode,
   onModeHover,
   onHourClick,
   size = 360,
+  unavailableTimes = [],
 }: ModeRingSimplifiedProps) {
   const center = size / 2;
   const ringRadius = size / 2 - 50; // Leave space for hour labels outside
@@ -158,18 +257,55 @@ export function ModeRingSimplified({
   const currentTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const currentAngle = hourToAngle(currentHour + currentMinutes / 60);
 
-  // Build hourly segments
+  // Check if an hour is within an unavailable block
+  const isHourUnavailable = (hour: number): boolean => {
+    const hourStart = hour * 60;
+    const hourEnd = (hour + 1) * 60;
+    for (const ut of unavailableTimes) {
+      const [utStartH, utStartM] = ut.start.split(':').map(Number);
+      const [utEndH, utEndM] = ut.end.split(':').map(Number);
+      const utStart = utStartH * 60 + utStartM;
+      const utEnd = utEndH * 60 + utEndM;
+      // Check if this hour overlaps with the unavailable block
+      if (hourStart < utEnd && utStart < hourEnd) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Get mode state for visual styling
+  const getModeState = (mode: Mode): string => {
+    const mw = modeWindows.find(m => m.mode === mode);
+    return mw?.state || 'INTACT';
+  };
+
+  // Build hourly segments using baselineWindows if available (handles split windows correctly)
   const hourlySegments = useMemo(() => {
-    return Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      dominantMode: getDominantMode(hour, modeWindows),
-      activeModes: getActiveModesAtHour(hour, modeWindows),
-    }));
-  }, [modeWindows]);
+    return Array.from({ length: 24 }, (_, hour) => {
+      const activeModes = baselineWindows.length > 0
+        ? getActiveModesAtHourFromBaseline(hour, baselineWindows)
+        : getActiveModesAtHour(hour, modeWindows);
+
+      return {
+        hour,
+        dominantMode: getDominantMode(hour, modeWindows, baselineWindows),
+        activeModes,
+        isUnavailable: isHourUnavailable(hour),
+      };
+    });
+  }, [modeWindows, baselineWindows, unavailableTimes]);
 
   // Compute mode spans (consecutive hours with same dominant mode) for labeling
+  // ALL modes get labels now - using 1-letter abbreviations for small segments
   const modeSpans = useMemo(() => {
-    const spans: Array<{ mode: Mode; startHour: number; endHour: number }> = [];
+    const spans: Array<{
+      mode: Mode;
+      startHour: number;
+      endHour: number;
+      duration: number;
+      labelType: 'full' | 'short' | 'external';
+    }> = [];
     let currentMode: Mode | null = null;
     let spanStart = 0;
 
@@ -177,7 +313,18 @@ export function ModeRingSimplified({
       const mode = hourlySegments[hour].dominantMode;
       if (mode !== currentMode) {
         if (currentMode) {
-          spans.push({ mode: currentMode, startHour: spanStart, endHour: hour });
+          const duration = hour - spanStart;
+          spans.push({
+            mode: currentMode,
+            startHour: spanStart,
+            endHour: hour,
+            duration,
+            // Label type based on duration:
+            // >= 2 hours: full 3-letter abbreviation
+            // 1-2 hours: 1-letter abbreviation
+            // < 1 hour (0.5h): external label with leader line
+            labelType: duration >= 2 ? 'full' : duration >= 1 ? 'short' : 'external',
+          });
         }
         currentMode = mode;
         spanStart = hour;
@@ -185,11 +332,17 @@ export function ModeRingSimplified({
     }
     // Close final span
     if (currentMode) {
-      spans.push({ mode: currentMode, startHour: spanStart, endHour: 24 });
+      const duration = 24 - spanStart;
+      spans.push({
+        mode: currentMode,
+        startHour: spanStart,
+        endHour: 24,
+        duration,
+        labelType: duration >= 2 ? 'full' : duration >= 1 ? 'short' : 'external',
+      });
     }
 
-    // Filter to spans with at least 2 hours (enough room for label)
-    return spans.filter(s => s.endHour - s.startHour >= 2);
+    return spans;
   }, [hourlySegments]);
 
   // Hour labels (every 3 hours)
@@ -230,7 +383,7 @@ export function ModeRingSimplified({
           opacity={0.3}
         />
 
-        {/* Hour segments */}
+        {/* Hour segments - with gap/degraded visualization */}
         {hourlySegments.map(segment => {
           if (!segment.dominantMode) return null;
 
@@ -239,13 +392,54 @@ export function ModeRingSimplified({
           const modeColor = MODE_COLORS[segment.dominantMode];
           const isHovered = hoveredMode === segment.dominantMode;
           const isDimmed = hoveredMode !== null && !isHovered;
+          const modeState = getModeState(segment.dominantMode);
+
+          // Show as gap if unavailable time overlaps this hour
+          if (segment.isUnavailable) {
+            return (
+              <path
+                key={segment.hour}
+                d={createArcPath(startAngle, endAngle, innerRadius, outerRadius, center, center)}
+                fill="#f3f4f6"
+                opacity={isDimmed ? 0.2 : 0.4}
+                style={{
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={() => onModeHover?.(segment.dominantMode!)}
+                onMouseLeave={() => onModeHover?.(null)}
+                onClick={() => onHourClick?.(segment.hour, segment.dominantMode)}
+              >
+                <title>
+                  {segment.hour}:00 – {(segment.hour + 1) % 24}:00{'\n'}
+                  {segment.dominantMode} (blocked)
+                </title>
+              </path>
+            );
+          }
+
+          // Determine visual treatment based on mode state
+          let opacity = isDimmed ? 0.3 : isHovered ? 1 : 0.85;
+          let strokeDasharray: string | undefined;
+
+          if (modeState === 'WITHHELD') {
+            opacity = isDimmed ? 0.2 : 0.4;
+            strokeDasharray = '4 2';
+          } else if (modeState === 'DEFERRED') {
+            opacity = isDimmed ? 0.25 : 0.6;
+          } else if (modeState === 'FRAGMENTED' || modeState === 'STRAINED') {
+            opacity = isDimmed ? 0.3 : isHovered ? 1 : 0.75;
+          }
 
           return (
             <path
               key={segment.hour}
               d={createArcPath(startAngle, endAngle, innerRadius, outerRadius, center, center)}
               fill={modeColor}
-              opacity={isDimmed ? 0.3 : isHovered ? 1 : 0.85}
+              opacity={opacity}
+              stroke={strokeDasharray ? modeColor : undefined}
+              strokeWidth={strokeDasharray ? 1 : undefined}
+              strokeDasharray={strokeDasharray}
               style={{
                 cursor: 'pointer',
                 transition: 'opacity 0.15s ease',
@@ -257,22 +451,67 @@ export function ModeRingSimplified({
               <title>
                 {segment.hour}:00 – {(segment.hour + 1) % 24}:00{'\n'}
                 {segment.dominantMode}
+                {modeState !== 'INTACT' && modeState !== 'AVAILABLE' && ` (${modeState.toLowerCase()})`}
                 {segment.activeModes.length > 1 && `\n(${segment.activeModes.length} modes active)`}
               </title>
             </path>
           );
         })}
 
-        {/* Mode abbreviation labels inside ring */}
+        {/* Mode abbreviation labels - adapts to segment size */}
         {modeSpans.map((span) => {
           const midHour = (span.startHour + span.endHour) / 2;
           const midAngle = hourToAngle(midHour);
-          const labelRadius = ringRadius; // Center of ring
-          const x = center + Math.cos(midAngle) * labelRadius;
-          const y = center + Math.sin(midAngle) * labelRadius;
           const modeColor = MODE_COLORS[span.mode];
           const isHovered = hoveredMode === span.mode;
           const isDimmed = hoveredMode !== null && !isHovered;
+
+          if (span.labelType === 'external') {
+            // Very small segment: place label outside with leader line
+            const arcRadius = ringRadius;
+            const labelOuterRadius = outerRadius + 35;
+            const arcX = center + Math.cos(midAngle) * arcRadius;
+            const arcY = center + Math.sin(midAngle) * arcRadius;
+            const labelX = center + Math.cos(midAngle) * labelOuterRadius;
+            const labelY = center + Math.sin(midAngle) * labelOuterRadius;
+
+            return (
+              <g key={`mode-${span.mode}-${span.startHour}`}>
+                {/* Leader line */}
+                <line
+                  x1={arcX}
+                  y1={arcY}
+                  x2={labelX}
+                  y2={labelY}
+                  stroke={modeColor}
+                  strokeWidth="1"
+                  opacity={isDimmed ? 0.3 : 0.6}
+                />
+                {/* External label */}
+                <text
+                  x={labelX}
+                  y={labelY}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill={isDimmed ? '#9ca3af' : modeColor}
+                  fontSize="9"
+                  fontWeight="700"
+                  style={{
+                    pointerEvents: 'none',
+                    opacity: isDimmed ? 0.4 : 1,
+                  }}
+                >
+                  {MODE_ABBREV_SHORT[span.mode]}
+                </text>
+              </g>
+            );
+          }
+
+          // Normal label inside the ring
+          const labelRadius = ringRadius;
+          const x = center + Math.cos(midAngle) * labelRadius;
+          const y = center + Math.sin(midAngle) * labelRadius;
+          const abbrev = span.labelType === 'short' ? MODE_ABBREV_SHORT[span.mode] : MODE_ABBREV[span.mode];
 
           return (
             <text
@@ -282,7 +521,7 @@ export function ModeRingSimplified({
               textAnchor="middle"
               dominantBaseline="middle"
               fill={isDimmed ? '#9ca3af' : '#ffffff'}
-              fontSize="10"
+              fontSize={span.labelType === 'short' ? '11' : '10'}
               fontWeight="700"
               style={{
                 textShadow: `0 1px 2px ${modeColor}`,
@@ -290,7 +529,7 @@ export function ModeRingSimplified({
                 opacity: isDimmed ? 0.4 : 1,
               }}
             >
-              {MODE_ABBREV[span.mode]}
+              {abbrev}
             </text>
           );
         })}
@@ -365,4 +604,4 @@ export function ModeRingSimplified({
 /**
  * Export helper for legend component.
  */
-export { getActiveModesAtHour, getDominantMode, MODE_PRECEDENCE };
+export { getActiveModesAtHour, getActiveModesAtHourFromBaseline, getDominantMode, MODE_PRECEDENCE };

@@ -8,7 +8,7 @@
 
 import type { ModeGovernanceDecision, BaselineMode } from '../types.js';
 import type { V1Constraint } from '../constraints/types.js';
-import { computeModeWindows, sortByDiscoveryRisk, countFlaggedModes, extractUnavailableTimes } from '../utils/computeModeWindows.js';
+import { computeModeWindows, countFlaggedModes, extractUnavailableTimes } from '../utils/computeModeWindows.js';
 import { ModeStateDisplay } from './ModeStateDisplay.js';
 import { colors, spacing, typography } from './tokens.js';
 
@@ -18,8 +18,9 @@ interface GovernorDisplayProps {
   selectedDate?: string;
   hoveredMode?: BaselineMode | null;
   onModeHover?: (mode: BaselineMode | null) => void;
-  onEditConflict?: (constraintId: string) => void;
   baselineWindows?: Array<{ mode: string; start: string; end: string }>;
+  /** Post-lunch dip window from chronotype template */
+  postLunchDip?: { start: string; end: string } | null;
 }
 
 export function GovernorDisplay({
@@ -28,8 +29,8 @@ export function GovernorDisplay({
   selectedDate = new Date().toISOString().slice(0, 10),
   hoveredMode,
   onModeHover,
-  onEditConflict,
   baselineWindows = [],
+  postLunchDip = null,
 }: GovernorDisplayProps) {
   // Extract unavailable times from constraints
   const unavailableTimes = extractUnavailableTimes(
@@ -44,14 +45,46 @@ export function GovernorDisplay({
   // Compute mode windows with failure signatures and fragmentation analysis
   const modeWindows = computeModeWindows(decisions, unavailableTimes);
 
-  // Sort by discovery risk
-  const sortedWindows = sortByDiscoveryRisk(modeWindows);
-
   // Filter out SILENCE states (per spec: "shows nothing")
-  const visibleWindows = sortedWindows.filter(mw => mw.state !== 'SILENCE');
+  const visibleWindows = modeWindows.filter(mw => mw.state !== 'SILENCE');
+
+  // Sort by priority: Flagged first (WITHHELD > DEFERRED > FRAGMENTED > STRAINED), then clean modes chronologically
+  const statePriority: Record<string, number> = {
+    WITHHELD: 4,
+    DEFERRED: 3,
+    FRAGMENTED: 2,
+    STRAINED: 1,
+    INTACT: 0,
+    AVAILABLE: 0,
+    SILENCE: -1,
+  };
+
+  const timeToMinutes = (time: string): number => {
+    if (!time) return 0;
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const sortedWindows = [...visibleWindows].sort((a, b) => {
+    const aPriority = statePriority[a.state] ?? 0;
+    const bPriority = statePriority[b.state] ?? 0;
+    // Flagged modes first
+    if (aPriority !== bPriority) {
+      return bPriority - aPriority;
+    }
+    // Same priority level: sort chronologically by window start time
+    const aStart = timeToMinutes(a.fragmentation.baselineWindow.start);
+    const bStart = timeToMinutes(b.fragmentation.baselineWindow.start);
+    return aStart - bStart;
+  });
 
   // Count flagged modes for header
   const flaggedCount = countFlaggedModes(visibleWindows);
+
+  // Check if a mode is flagged (non-clean)
+  const isFlagged = (state: string): boolean => {
+    return !['INTACT', 'AVAILABLE'].includes(state);
+  };
 
   return (
     <div data-testid="governor-display">
@@ -61,14 +94,14 @@ export function GovernorDisplay({
           ...typography.h2,
           marginBottom: spacing.xs,
         }}>
-          Governor
+          Today's Windows
         </h2>
         <p style={{
           ...typography.bodySmall,
           color: colors.text.tertiary,
           margin: 0,
         }}>
-          Current structural reliability by mode.
+          When each kind of thinking is most reliable.
           {flaggedCount > 0 && (
             <span style={{ color: colors.status.fragmented.text, fontWeight: 500 }}>
               {' '}{flaggedCount} mode{flaggedCount !== 1 ? 's' : ''} flagged.
@@ -94,15 +127,17 @@ export function GovernorDisplay({
           gap: spacing.sm,
           marginBottom: spacing.lg,
         }}>
-          {visibleWindows.map((modeWindow) => (
+          {sortedWindows.map((modeWindow) => (
             <ModeStateDisplay
               key={modeWindow.mode}
               modeWindow={modeWindow}
               isHovered={hoveredMode === modeWindow.mode}
               isDimmed={hoveredMode !== null && hoveredMode !== modeWindow.mode}
               onHover={(mode) => onModeHover?.(mode as BaselineMode | null)}
-              onEditConflict={onEditConflict}
               baselineWindows={baselineWindows}
+              postLunchDip={postLunchDip}
+              selectedDate={selectedDate}
+              defaultCollapsed={!isFlagged(modeWindow.state)}
             />
           ))}
         </div>

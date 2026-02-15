@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateBaselineWindows, getBaselineTemplates } from './windows.js';
+import { generateBaselineWindows, getBaselineTemplates, hasSplitWindows } from './windows.js';
 import type { ChronotypeProfile, Chronotype } from '../types.js';
 import { ALL_CANON_MODES, CANON_WINDOW_TEMPLATES } from '../canon/index.js';
 
@@ -47,9 +47,9 @@ describe('generateBaselineWindows', () => {
       const result = generateBaselineWindows(profile, TEST_DATE);
       const framing = result.find(w => w.mode === 'FRAMING')!;
 
-      // AURORA FRAMING: 06:00–08:00 (local time)
-      expect(new Date(framing.start).getHours()).toBe(6);
-      expect(new Date(framing.end).getHours()).toBe(8);
+      // AURORA FRAMING: 07:00–09:00 (v5.0 biologically honest windows)
+      expect(new Date(framing.start).getHours()).toBe(7);
+      expect(new Date(framing.end).getHours()).toBe(9);
     });
   });
 
@@ -76,24 +76,52 @@ describe('generateBaselineWindows', () => {
   });
 
   describe('TWILIGHT chronotype', () => {
-    it('should generate all 5 canon mode windows', () => {
+    it('should generate 6 windows (EXECUTION is split)', () => {
       const profile = createProfile('TWILIGHT');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(5);
+      // TWILIGHT has split EXECUTION (morning + evening) = 6 windows total
+      expect(result).toHaveLength(6);
       const modes = result.map(w => w.mode);
-      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'EXECUTION', 'REFLECTION']);
+    });
+
+    it('should have split EXECUTION windows', () => {
+      expect(hasSplitWindows('TWILIGHT', 'EXECUTION')).toBe(true);
+      expect(hasSplitWindows('TWILIGHT', 'FRAMING')).toBe(false);
     });
   });
 
   describe('NOCTURNE chronotype', () => {
-    it('should generate all 5 canon mode windows', () => {
+    it('should generate 6 windows (EXECUTION is split)', () => {
       const profile = createProfile('NOCTURNE');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(5);
+      // NOCTURNE has split EXECUTION (afternoon + late night) = 6 windows total
+      expect(result).toHaveLength(6);
       const modes = result.map(w => w.mode);
-      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'REFLECTION']);
+      expect(modes).toEqual(['FRAMING', 'EVALUATION', 'SYNTHESIS', 'EXECUTION', 'EXECUTION', 'REFLECTION']);
+    });
+
+    it('should have split EXECUTION windows', () => {
+      expect(hasSplitWindows('NOCTURNE', 'EXECUTION')).toBe(true);
+      expect(hasSplitWindows('NOCTURNE', 'FRAMING')).toBe(false);
+    });
+
+    it('should handle midnight wraparound for REFLECTION', () => {
+      const profile = createProfile('NOCTURNE');
+      const result = generateBaselineWindows(profile, TEST_DATE);
+      const reflection = result.find(w => w.mode === 'REFLECTION')!;
+
+      // NOCTURNE REFLECTION: 25:00–27:00 = 01:00–03:00 next day
+      const startDate = new Date(reflection.start);
+      const endDate = new Date(reflection.end);
+
+      expect(startDate.getHours()).toBe(1);
+      expect(endDate.getHours()).toBe(3);
+      // Should be on the next day (2024-01-16)
+      expect(startDate.getDate()).toBe(16);
+      expect(endDate.getDate()).toBe(16);
     });
   });
 
@@ -132,7 +160,8 @@ describe('generateBaselineWindows', () => {
       const profile = createProfile('TWILIGHT', 'MED');
       const result = generateBaselineWindows(profile, TEST_DATE);
 
-      expect(result).toHaveLength(5);
+      // TWILIGHT has split EXECUTION = 6 windows
+      expect(result).toHaveLength(6);
     });
   });
 

@@ -1,1 +1,1 @@
-export { generateBaselineWindows, getBaselineTemplates } from './windows.js';
+export { generateBaselineWindows, getBaselineTemplates, getPostLunchDip, getModeWindows, hasSplitWindows } from './windows.js';
