@@ -17,7 +17,7 @@ interface UnavailableTimeModalProps {
   constraint: V1Constraint | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (constraintId: string, startLocal: string, endLocal: string) => void;
+  onSave: (constraintId: string, startLocal: string, endLocal: string, label?: string) => void;
   onDelete: (constraintId: string) => void;
 }
 
@@ -28,6 +28,7 @@ export function UnavailableTimeModal({
   onSave,
   onDelete,
 }: UnavailableTimeModalProps) {
+  const [label, setLabel] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
 
@@ -35,6 +36,7 @@ export function UnavailableTimeModal({
   useEffect(() => {
     if (constraint && isFixedBlockPayload(constraint.payload)) {
       const payload = constraint.payload;
+      setLabel(payload.label || '');
       if (!payload.allDay) {
         setStartTime(payload.startLocal);
         setEndTime(payload.endLocal);
@@ -48,7 +50,7 @@ export function UnavailableTimeModal({
   if (!isOpen || !constraint) return null;
 
   const handleSave = () => {
-    onSave(constraint.id, startTime, endTime);
+    onSave(constraint.id, startTime, endTime, label.trim() || undefined);
     onClose();
   };
 
@@ -94,6 +96,28 @@ export function UnavailableTimeModal({
           gap: spacing.md,
           marginBottom: spacing.xl,
         }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+            <span style={{ ...typography.bodySmall, color: colors.text.secondary, minWidth: '60px' }}>
+              Label
+            </span>
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g., Standup, Gym"
+              maxLength={40}
+              style={{
+                flex: 1,
+                border: `1px solid ${colors.border.light}`,
+                borderRadius: radius.sm,
+                padding: `${spacing.sm} ${spacing.md}`,
+                ...typography.bodySmall,
+                background: colors.bg.elevated,
+                color: colors.text.primary,
+              }}
+            />
+          </label>
+
           <label style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
             <span style={{ ...typography.bodySmall, color: colors.text.secondary, minWidth: '60px' }}>
               Start

@@ -14,6 +14,36 @@
 import type { Mode, FailureSignature, FragmentationAnalysis } from '../types/modeStates.js';
 
 /**
+ * Format a single conflict for display.
+ * Uses label if available, otherwise falls back to time range.
+ */
+function formatConflict(conflict: { start: string; end: string; label?: string }): string {
+  if (conflict.label) {
+    return `${conflict.label} (${conflict.start})`;
+  }
+  return `${conflict.start}–${conflict.end}`;
+}
+
+/**
+ * Format multiple conflicts for display.
+ * Uses labels when available to make warnings more actionable.
+ */
+function formatConflicts(conflicts: Array<{ start: string; end: string; label?: string }>): string {
+  if (conflicts.length === 0) return '';
+  if (conflicts.length === 1) {
+    return formatConflict(conflicts[0]);
+  }
+  if (conflicts.length === 2) {
+    const hasLabels = conflicts.some(c => c.label);
+    if (hasLabels) {
+      return `${formatConflict(conflicts[0])} and ${formatConflict(conflicts[1])}`;
+    }
+    return `${conflicts.length} blocks`;
+  }
+  return `${conflicts.length} blocks`;
+}
+
+/**
  * Failure signatures indexed by mode and state.
  */
 export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> = {
@@ -57,7 +87,11 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
           return `Only ${Math.round(fragmentation.percentageAvailable * 100)}% of the window is available. Decisions may feel solid but miss what fell through the gaps.`;
         }
         const n = fragmentation.conflicts.length;
-        return `${n} conflict${n > 1 ? 's' : ''} ${n === 1 ? 'breaks' : 'break'} this window. Decisions may feel solid but miss what fell through the gaps.`;
+        const conflictDesc = formatConflicts(fragmentation.conflicts);
+        if (n === 1 && fragmentation.conflicts[0]?.label) {
+          return `${conflictDesc} splits this window. Decisions may feel solid but miss what fell through the gaps.`;
+        }
+        return `${conflictDesc} split this window. Decisions may feel solid but miss what fell through the gaps.`;
       },
     },
   },
@@ -93,11 +127,13 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       structuralCause: (fragmentation: FragmentationAnalysis) => {
         const n = fragmentation.conflicts.length;
         if (n >= 2) {
-          return `${n} blocks split this window. Each break costs focus — rebuilding gets harder each time.`;
+          const conflictDesc = formatConflicts(fragmentation.conflicts);
+          return `${conflictDesc} split this window. Each break costs focus — rebuilding gets harder each time.`;
         }
         const conflict = fragmentation.conflicts[0];
         if (conflict) {
-          return `A block at ${conflict.start}–${conflict.end} splits this window. You may solve the wrong problem without realizing it.`;
+          const conflictDesc = formatConflict(conflict);
+          return `${conflictDesc} splits this window. You may solve the wrong problem without realizing it.`;
         }
         return 'A scheduling conflict breaks this window into disconnected segments.';
       },
@@ -152,11 +188,13 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       structuralCause: (fragmentation: FragmentationAnalysis) => {
         const n = fragmentation.conflicts.length;
         if (n >= 2) {
-          return `${n} blocks split this into ${fragmentation.availablePortions.length} disconnected pieces. Each break costs focus — rebuilding gets harder each time.`;
+          const conflictDesc = formatConflicts(fragmentation.conflicts);
+          return `${conflictDesc} split this into ${fragmentation.availablePortions.length} disconnected pieces. Each break costs focus — rebuilding gets harder each time.`;
         }
         const conflict = fragmentation.conflicts[0];
         if (conflict) {
-          return `A block at ${conflict.start}–${conflict.end} splits this window. You'll lose thread and need to rebuild context.`;
+          const conflictDesc = formatConflict(conflict);
+          return `${conflictDesc} splits this window. You'll lose thread and need to rebuild context.`;
         }
         return 'A scheduling conflict breaks this window into disconnected segments.';
       },
@@ -208,9 +246,11 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       structuralCause: (fragmentation: FragmentationAnalysis) => {
         const n = fragmentation.conflicts.length;
         if (n === 1) {
-          return `A block at ${fragmentation.conflicts[0].start}–${fragmentation.conflicts[0].end} splits this window. Throughput drops but errors stay visible.`;
+          const conflictDesc = formatConflict(fragmentation.conflicts[0]);
+          return `${conflictDesc} splits this window. Throughput drops but errors stay visible.`;
         }
-        return `${n} blocks split this window. Throughput drops but errors stay visible.`;
+        const conflictDesc = formatConflicts(fragmentation.conflicts);
+        return `${conflictDesc} split this window. Throughput drops but errors stay visible.`;
       },
     },
     WITHHELD: {

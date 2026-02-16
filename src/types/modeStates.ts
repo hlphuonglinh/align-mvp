@@ -96,7 +96,7 @@ export interface FragmentationAnalysis {
   /** Percentage of baseline window that is available (0-1) */
   percentageAvailable: number;
   /** Unavailable times that conflict with this window */
-  conflicts: Array<{ id: string; start: string; end: string }>;
+  conflicts: Array<{ id: string; start: string; end: string; label?: string }>;
   /** Original baseline window before fragmentation */
   baselineWindow: TimeWindowHHMM;
 }

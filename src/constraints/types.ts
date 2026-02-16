@@ -17,6 +17,8 @@ export interface FixedBlockPayload {
   endLocal: string;
   /** If true, the entire day is unavailable (startLocal/endLocal ignored) */
   allDay?: boolean;
+  /** Optional user-defined label (e.g., "Standup", "Gym") */
+  label?: string;
 }
 
 /**

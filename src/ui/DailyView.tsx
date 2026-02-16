@@ -33,6 +33,7 @@ export function DailyView() {
     return today.toISOString().split('T')[0];
   });
   const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
+  const [deletingConstraintId, setDeletingConstraintId] = useState<string | null>(null);
   const [showCheckIn, setShowCheckIn] = useState(false);
 
   // Responsive layout
@@ -124,7 +125,7 @@ export function DailyView() {
   };
 
   // Handler for saving unavailable time changes
-  const handleSaveConstraint = (constraintId: string, startLocal: string, endLocal: string) => {
+  const handleSaveConstraint = (constraintId: string, startLocal: string, endLocal: string, label?: string) => {
     const updatedConstraints = constraints.map((c) => {
       if (c.id === constraintId && isFixedBlockPayload(c.payload)) {
         return {
@@ -134,6 +135,7 @@ export function DailyView() {
             startLocal,
             endLocal,
             allDay: false,
+            label: label || c.payload.label,
           },
         };
       }
@@ -324,16 +326,18 @@ export function DailyView() {
                 gap: spacing.xs,
               }}>
                 {constraintsForDay.map((constraint) => {
-                  let description = '';
+                  let label = '';
+                  let timeRange = '';
                   let constraintStart = '';
                   let constraintEnd = '';
                   if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
+                    label = constraint.payload.label || '';
                     if (constraint.payload.allDay) {
-                      description = 'All day';
+                      timeRange = 'All day';
                       constraintStart = '00:00';
                       constraintEnd = '24:00';
                     } else {
-                      description = `${constraint.payload.startLocal}–${constraint.payload.endLocal}`;
+                      timeRange = `${constraint.payload.startLocal}–${constraint.payload.endLocal}`;
                       constraintStart = constraint.payload.startLocal || '';
                       constraintEnd = constraint.payload.endLocal || '';
                     }
@@ -366,35 +370,111 @@ export function DailyView() {
                   });
                   const affectedModes = Array.from(affectedModeSet);
 
+                  const isDeleting = deletingConstraintId === constraint.id;
+                  const displayTitle = label ? `${label} · ${timeRange}` : timeRange;
+
                   return (
                     <div
                       key={constraint.id}
-                      onClick={() => handleEditUnavailable(constraint.id)}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
                         padding: `${spacing.sm} ${spacing.md}`,
                         background: affectedModes.length > 0 ? 'rgba(251, 191, 36, 0.08)' : colors.bg.subtle,
                         border: `1px solid ${affectedModes.length > 0 ? '#fbbf24' : colors.border.subtle}`,
                         borderRadius: radius.sm,
                         fontSize: '0.75rem',
                         color: colors.text.secondary,
-                        cursor: 'pointer',
-                        transition: `background ${transitions.fast}`,
                       }}
                     >
-                      <span style={{ fontFamily: "'SF Mono', 'Monaco', monospace", fontWeight: 500 }}>
-                        {description}
-                      </span>
-                      {affectedModes.length > 0 && (
-                        <span style={{
-                          fontSize: '0.625rem',
-                          color: '#b45309',
-                          fontWeight: 500,
-                        }}>
-                          {affectedModes.join(', ')}
-                        </span>
+                      {isDeleting ? (
+                        // Delete confirmation
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: colors.text.primary }}>
+                            Remove {label ? `'${label}'` : ''} {timeRange}?
+                          </span>
+                          <span style={{ display: 'flex', gap: spacing.xs }}>
+                            <button
+                              onClick={() => {
+                                handleDeleteConstraint(constraint.id);
+                                setDeletingConstraintId(null);
+                              }}
+                              style={{
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: radius.sm,
+                                padding: `2px 8px`,
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Remove
+                            </button>
+                            <button
+                              onClick={() => setDeletingConstraintId(null)}
+                              style={{
+                                background: colors.bg.hover,
+                                color: colors.text.secondary,
+                                border: 'none',
+                                borderRadius: radius.sm,
+                                padding: `2px 8px`,
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        </div>
+                      ) : (
+                        // Normal display
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontFamily: "'SF Mono', 'Monaco', monospace", fontWeight: 500 }}>
+                              {displayTitle}
+                            </span>
+                            <span style={{ display: 'flex', gap: spacing.xs }}>
+                              <button
+                                onClick={() => handleEditUnavailable(constraint.id)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#6366f1',
+                                  cursor: 'pointer',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 500,
+                                  padding: '2px 4px',
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => setDeletingConstraintId(constraint.id)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#9ca3af',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  padding: '2px 4px',
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          </div>
+                          {affectedModes.length > 0 && (
+                            <div style={{
+                              marginTop: '4px',
+                              fontSize: '0.625rem',
+                              color: '#b45309',
+                              fontWeight: 500,
+                            }}>
+                              Affects: {affectedModes.join(', ')}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

@@ -97,7 +97,7 @@ function getMinutesDuration(window: TimeWindowHHMM): number {
  */
 export function analyzeFragmentation(
   baselineWindow: TimeWindowHHMM,
-  unavailableTimes: Array<{ id: string; start: string; end: string }>
+  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }>
 ): FragmentationAnalysis {
   // Find all unavailable times that intersect this baseline
   const conflicts = unavailableTimes.filter(ut =>
@@ -251,7 +251,7 @@ function isoToHHMM(iso: string): string {
  */
 export function computeModeWindows(
   decisions: ModeGovernanceDecision[],
-  unavailableTimes: Array<{ id: string; start: string; end: string }> = []
+  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }> = []
 ): ModeWindow[] {
   const modeWindows: ModeWindow[] = [];
 
@@ -410,11 +410,12 @@ export function extractUnavailableTimes(
       allDay?: boolean;
       startLocal?: string;
       endLocal?: string;
+      label?: string;
     };
   }>,
   selectedDate: string
-): Array<{ id: string; start: string; end: string }> {
-  const unavailableTimes: Array<{ id: string; start: string; end: string }> = [];
+): Array<{ id: string; start: string; end: string; label?: string }> {
+  const unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }> = [];
 
   for (const constraint of constraints) {
     if (constraint.kind !== 'FIXED_BLOCK') continue;
@@ -439,6 +440,7 @@ export function extractUnavailableTimes(
       id: constraint.id,
       start,
       end,
+      label: payload.label,
     });
   }
 
