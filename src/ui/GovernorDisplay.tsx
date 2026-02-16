@@ -86,6 +86,27 @@ export function GovernorDisplay({
     return !['INTACT', 'AVAILABLE'].includes(state);
   };
 
+  // Find first upcoming mode for clean-day case (expand it instead of all collapsed)
+  const getFirstUpcomingMode = (): string | null => {
+    if (flaggedCount > 0) return null; // Don't apply this logic if there are flags
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    for (const mw of sortedWindows) {
+      const startTime = mw.fragmentation.baselineWindow.start;
+      if (!startTime) continue;
+      const startMinutes = timeToMinutes(startTime);
+      if (startMinutes > currentMinutes) {
+        return mw.mode; // First mode that hasn't started yet
+      }
+    }
+    // If all modes have passed, return the first one
+    return sortedWindows[0]?.mode || null;
+  };
+
+  const firstUpcomingMode = getFirstUpcomingMode();
+
   return (
     <div data-testid="governor-display">
       {/* Header */}
@@ -127,19 +148,27 @@ export function GovernorDisplay({
           gap: spacing.sm,
           marginBottom: spacing.lg,
         }}>
-          {sortedWindows.map((modeWindow) => (
-            <ModeStateDisplay
-              key={modeWindow.mode}
-              modeWindow={modeWindow}
-              isHovered={hoveredMode === modeWindow.mode}
-              isDimmed={hoveredMode !== null && hoveredMode !== modeWindow.mode}
-              onHover={(mode) => onModeHover?.(mode as BaselineMode | null)}
-              baselineWindows={baselineWindows}
-              postLunchDip={postLunchDip}
-              selectedDate={selectedDate}
-              defaultCollapsed={!isFlagged(modeWindow.state)}
-            />
-          ))}
+          {sortedWindows.map((modeWindow) => {
+            // Determine if card should be collapsed
+            // - Flagged modes: never collapsed
+            // - Clean modes: collapsed unless it's the first upcoming on a clean day
+            const shouldCollapse = !isFlagged(modeWindow.state) &&
+              modeWindow.mode !== firstUpcomingMode;
+
+            return (
+              <ModeStateDisplay
+                key={modeWindow.mode}
+                modeWindow={modeWindow}
+                isHovered={hoveredMode === modeWindow.mode}
+                isDimmed={hoveredMode !== null && hoveredMode !== modeWindow.mode}
+                onHover={(mode) => onModeHover?.(mode as BaselineMode | null)}
+                baselineWindows={baselineWindows}
+                postLunchDip={postLunchDip}
+                selectedDate={selectedDate}
+                defaultCollapsed={shouldCollapse}
+              />
+            );
+          })}
         </div>
       )}
 
