@@ -42,10 +42,10 @@ const MODE_ABBREV: Record<Mode, string> = {
 const STATE_LABELS: Record<ModeStateValue, string> = {
   INTACT: '',
   AVAILABLE: '',
-  FRAGMENTED: 'FRAGMENTED',
-  DEFERRED: 'DISRUPTED',
-  STRAINED: 'STRAINED',
-  WITHHELD: 'WITHHELD',
+  FRAGMENTED: 'Fragmented',
+  DEFERRED: 'Disrupted',
+  STRAINED: 'Strained',
+  WITHHELD: 'Withheld',
   SILENCE: '',
 };
 
