@@ -346,11 +346,10 @@ export function ModeStateDisplay({
   selectedDate = new Date().toISOString().split('T')[0],
   defaultCollapsed = false,
 }: ModeStateDisplayProps) {
-  // Clean modes start collapsed, flagged modes start expanded
+  // Clean modes start collapsed (compact single-line), flagged modes start expanded (full card)
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
-  // For expanded cards, controls showing extra details
-  const initialExpanded = !['INTACT', 'AVAILABLE'].includes(modeWindow.state);
-  const [expanded, setExpanded] = useState(initialExpanded);
+  // Details/Examples section always starts collapsed - user must click to expand
+  const [expanded, setExpanded] = useState(false);
 
   const { mode, state, window, failureSignature, fragmentation } = modeWindow;
   const stateColor = STATE_COLORS[state];

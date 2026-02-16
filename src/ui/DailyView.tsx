@@ -7,6 +7,7 @@ import { evaluateDay } from '../governor/index.js';
 import { constraintsToBusyBlocks, getConstraintsForDay, isFixedBlockPayload } from '../constraints/index.js';
 import { computeModeWindows, extractUnavailableTimes } from '../utils/computeModeWindows.js';
 import { ModeRingSimplified } from './ModeRingSimplified.js';
+import { PeakBar } from './PeakBar.js';
 import { ModeLegend } from './ModeLegend.js';
 import { GovernorDisplay } from './GovernorDisplay.js';
 import { UnavailableTimeModal } from './UnavailableTimeModal.js';
@@ -266,23 +267,23 @@ export function DailyView() {
         gap: spacing.xl,
         marginBottom: spacing.xl,
       }}>
-        {/* Left column: Ring + Legend + Schedule Conflicts */}
+        {/* Left column: Ring + Peak Bar + Mode List + Schedule Conflicts */}
         <div>
-          {/* Simplified 24h Ring Visualization */}
+          {/* Zone-based 24h Ring Visualization */}
           <ModeRingSimplified
             modeWindows={modeWindows}
             baselineWindows={baselineWindows}
-            hoveredMode={hoveredMode}
-            onModeHover={setHoveredMode}
-            onHourClick={(_hour, mode) => {
-              if (mode) {
-                setHoveredMode(mode);
-              }
-            }}
             unavailableTimes={unavailableTimes}
           />
 
-          {/* Interactive Legend */}
+          {/* Linear Peak Bar - zoom into peak modes */}
+          <PeakBar
+            baselineWindows={baselineWindows}
+            modeWindows={modeWindows}
+            unavailableTimes={unavailableTimes}
+          />
+
+          {/* Cognitive Modes List */}
           <ModeLegend
             modeWindows={modeWindows}
             hoveredMode={hoveredMode}

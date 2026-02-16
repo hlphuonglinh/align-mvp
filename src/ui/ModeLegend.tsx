@@ -395,19 +395,19 @@ export function ModeLegend({
                 style={{
                   marginTop: spacing.sm,
                   padding: spacing.md,
-                  backgroundColor: '#fef3c7',
-                  borderLeft: '3px solid #f59e0b',
+                  backgroundColor: '#f8fafc',
+                  borderLeft: '3px solid #94a3b8',
                   borderRadius: radius.sm,
                   fontSize: '0.75rem',
                   lineHeight: 1.5,
-                  color: '#92400e',
+                  color: '#475569',
                 }}
               >
                 <strong>
                   {modeNames} overlap {overlap.timeRange}
                 </strong>
                 <br />
-                <span style={{ color: '#b45309' }}>
+                <span style={{ color: '#64748b' }}>
                   {MODE_LABELS[overlap.dominantMode]} takes priority for high-stakes decisions.
                 </span>
               </div>
