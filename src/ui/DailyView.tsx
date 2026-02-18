@@ -6,6 +6,7 @@ import { generateBaselineWindows, getPostLunchDip } from '../baseline/index.js';
 import { evaluateDay } from '../governor/index.js';
 import { constraintsToBusyBlocks, getConstraintsForDay, isFixedBlockPayload } from '../constraints/index.js';
 import { computeModeWindows, extractUnavailableTimes } from '../utils/computeModeWindows.js';
+import { assessModeWindow } from '../utils/breakClassification.js';
 import { ModeRingSimplified } from './ModeRingSimplified.js';
 import { PeakBar } from './PeakBar.js';
 import { ModeLegend } from './ModeLegend.js';
@@ -125,7 +126,7 @@ export function DailyView() {
   };
 
   // Handler for saving unavailable time changes
-  const handleSaveConstraint = (constraintId: string, startLocal: string, endLocal: string, label?: string) => {
+  const handleSaveConstraint = (constraintId: string, startLocal: string, endLocal: string, label?: string, breakType?: 'commitment' | 'rest' | 'unclassified') => {
     const updatedConstraints = constraints.map((c) => {
       if (c.id === constraintId && isFixedBlockPayload(c.payload)) {
         return {
@@ -136,6 +137,7 @@ export function DailyView() {
             endLocal,
             allDay: false,
             label: label || c.payload.label,
+            breakType: breakType ?? c.payload.breakType,
           },
         };
       }
@@ -183,11 +185,24 @@ export function DailyView() {
     constraints.map(c => ({
       id: c.id,
       kind: c.kind,
-      payload: c.payload as { dateISO?: string; allDay?: boolean; startLocal?: string; endLocal?: string },
+      payload: c.payload as { dateISO?: string; allDay?: boolean; startLocal?: string; endLocal?: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' },
     })),
     selectedDate
   );
   const modeWindows = computeModeWindows(governorDecisions, unavailableTimes);
+
+  // Compute fragmenting breaks for ring/peak bar visualization
+  // Only fragmenting breaks should create visual gaps
+  const fragmentingBreakIds = new Set<string>();
+  for (const mw of modeWindows) {
+    const assessment = assessModeWindow(mw.mode, mw.window, unavailableTimes);
+    for (const brk of assessment.breaks) {
+      if (brk.classification === 'fragmenting') {
+        fragmentingBreakIds.add(brk.id);
+      }
+    }
+  }
+  const fragmentingUnavailableTimes = unavailableTimes.filter(ut => fragmentingBreakIds.has(ut.id));
 
   // Check if ALL modes are silent (for global banner)
   const allModesSilent = governorDecisions.every(d => d.decision === 'SILENCE');
@@ -275,14 +290,14 @@ export function DailyView() {
           <ModeRingSimplified
             modeWindows={modeWindows}
             baselineWindows={baselineWindows}
-            unavailableTimes={unavailableTimes}
+            unavailableTimes={fragmentingUnavailableTimes}
           />
 
           {/* Linear Peak Bar - zoom into peak modes */}
           <PeakBar
             baselineWindows={baselineWindows}
             modeWindows={modeWindows}
-            unavailableTimes={unavailableTimes}
+            unavailableTimes={fragmentingUnavailableTimes}
           />
 
           {/* Cognitive Modes List */}
@@ -299,7 +314,7 @@ export function DailyView() {
             baselineWindows={baselineWindows}
           />
 
-          {/* Schedule Conflicts (moved from bottom) */}
+          {/* Schedule Conflicts (break-aware: only shows fragmenting breaks) */}
           <div style={{ marginTop: spacing.lg }}>
             <div style={{
               fontSize: '0.6875rem',
@@ -311,176 +326,182 @@ export function DailyView() {
             }}>
               Schedule Conflicts
             </div>
-            {constraintsForDay.length === 0 ? (
-              <p style={{
-                ...typography.caption,
-                color: colors.text.muted,
-                margin: 0,
-              }}>
-                No conflicts today.
-              </p>
-            ) : (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: spacing.xs,
-              }}>
-                {constraintsForDay.map((constraint) => {
-                  let label = '';
-                  let timeRange = '';
-                  let constraintStart = '';
-                  let constraintEnd = '';
-                  if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
-                    label = constraint.payload.label || '';
-                    if (constraint.payload.allDay) {
-                      timeRange = 'All day';
-                      constraintStart = '00:00';
-                      constraintEnd = '24:00';
-                    } else {
-                      timeRange = `${constraint.payload.startLocal}–${constraint.payload.endLocal}`;
-                      constraintStart = constraint.payload.startLocal || '';
-                      constraintEnd = constraint.payload.endLocal || '';
-                    }
+            {(() => {
+              // Classify breaks for each mode window using break-aware logic
+              const breakAssessments = modeWindows.map(mw => ({
+                mode: mw.mode,
+                assessment: assessModeWindow(mw.mode, mw.window, unavailableTimes),
+              }));
+
+              // Collect constraint IDs that are fragmenting in at least one mode
+              const fragmentingConstraintIds = new Set<string>();
+
+              for (const { assessment } of breakAssessments) {
+                for (const brk of assessment.breaks) {
+                  if (brk.classification === 'fragmenting') {
+                    fragmentingConstraintIds.add(brk.id);
                   }
+                }
+              }
 
-                  const timesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string): boolean => {
-                    if (!aStart || !aEnd || !bStart || !bEnd) return false;
-                    const toMin = (t: string) => {
-                      const [h, m] = t.split(':').map(Number);
-                      return h * 60 + m;
-                    };
-                    return toMin(aStart) < toMin(bEnd) && toMin(bStart) < toMin(aEnd);
-                  };
+              // Filter constraints to only show fragmenting ones
+              // Restorative breaks are invisible - they don't appear here at all
+              const fragmentingConstraints = constraintsForDay.filter(c =>
+                fragmentingConstraintIds.has(c.id)
+              );
 
-                  const isoToHHMM = (iso: string): string => {
-                    const date = new Date(iso);
-                    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                  };
+              // No fragmenting conflicts (includes case with only restorative breaks)
+              if (fragmentingConstraints.length === 0) {
+                return (
+                  <p style={{
+                    ...typography.caption,
+                    color: colors.text.muted,
+                    margin: 0,
+                  }}>
+                    No conflicts today.
+                  </p>
+                );
+              }
 
-                  const affectedModeSet = new Set<string>();
-                  modeWindows
-                    .filter(mw => mw.fragmentation.conflicts.some(c => c.id === constraint.id))
-                    .forEach(mw => affectedModeSet.add(mw.mode));
-                  baselineWindows.forEach(bw => {
-                    const bwStart = isoToHHMM(bw.start);
-                    const bwEnd = isoToHHMM(bw.end);
-                    if (timesOverlap(constraintStart, constraintEnd, bwStart, bwEnd)) {
-                      affectedModeSet.add(bw.mode);
+              return (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: spacing.xs,
+                }}>
+                  {fragmentingConstraints.map((constraint) => {
+                    let label = '';
+                    let timeRange = '';
+                    if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
+                      label = constraint.payload.label || '';
+                      if (constraint.payload.allDay) {
+                        timeRange = 'All day';
+                      } else {
+                        timeRange = `${constraint.payload.startLocal}–${constraint.payload.endLocal}`;
+                      }
                     }
-                  });
-                  const affectedModes = Array.from(affectedModeSet);
 
-                  const isDeleting = deletingConstraintId === constraint.id;
-                  const displayTitle = label ? `${label} · ${timeRange}` : timeRange;
+                    // Find which modes this constraint fragments
+                    const fragmentedModes: string[] = [];
+                    for (const { mode, assessment } of breakAssessments) {
+                      const brk = assessment.breaks.find(b => b.id === constraint.id);
+                      if (brk && brk.classification === 'fragmenting') {
+                        fragmentedModes.push(mode);
+                      }
+                    }
 
-                  return (
-                    <div
-                      key={constraint.id}
-                      style={{
-                        padding: `${spacing.sm} ${spacing.md}`,
-                        background: affectedModes.length > 0 ? 'rgba(251, 191, 36, 0.08)' : colors.bg.subtle,
-                        border: `1px solid ${affectedModes.length > 0 ? '#fbbf24' : colors.border.subtle}`,
-                        borderRadius: radius.sm,
-                        fontSize: '0.75rem',
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      {isDeleting ? (
-                        // Delete confirmation
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ color: colors.text.primary }}>
-                            Remove {label ? `'${label}'` : ''} {timeRange}?
-                          </span>
-                          <span style={{ display: 'flex', gap: spacing.xs }}>
-                            <button
-                              onClick={() => {
-                                handleDeleteConstraint(constraint.id);
-                                setDeletingConstraintId(null);
-                              }}
-                              style={{
-                                background: '#ef4444',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: radius.sm,
-                                padding: `2px 8px`,
-                                fontSize: '0.6875rem',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Remove
-                            </button>
-                            <button
-                              onClick={() => setDeletingConstraintId(null)}
-                              style={{
-                                background: colors.bg.hover,
-                                color: colors.text.secondary,
-                                border: 'none',
-                                borderRadius: radius.sm,
-                                padding: `2px 8px`,
-                                fontSize: '0.6875rem',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </span>
-                        </div>
-                      ) : (
-                        // Normal display
-                        <div>
+                    const isDeleting = deletingConstraintId === constraint.id;
+                    const displayTitle = label ? `${label} · ${timeRange}` : timeRange;
+
+                    return (
+                      <div
+                        key={constraint.id}
+                        style={{
+                          padding: `${spacing.sm} ${spacing.md}`,
+                          background: 'rgba(251, 191, 36, 0.08)',
+                          border: '1px solid #fbbf24',
+                          borderRadius: radius.sm,
+                          fontSize: '0.75rem',
+                          color: colors.text.secondary,
+                        }}
+                      >
+                        {isDeleting ? (
+                          // Delete confirmation
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontFamily: "'SF Mono', 'Monaco', monospace", fontWeight: 500 }}>
-                              {displayTitle}
+                            <span style={{ color: colors.text.primary }}>
+                              Remove {label ? `'${label}'` : ''} {timeRange}?
                             </span>
                             <span style={{ display: 'flex', gap: spacing.xs }}>
                               <button
-                                onClick={() => handleEditUnavailable(constraint.id)}
+                                onClick={() => {
+                                  handleDeleteConstraint(constraint.id);
+                                  setDeletingConstraintId(null);
+                                }}
                                 style={{
-                                  background: 'none',
+                                  background: '#ef4444',
+                                  color: 'white',
                                   border: 'none',
-                                  color: '#6366f1',
-                                  cursor: 'pointer',
+                                  borderRadius: radius.sm,
+                                  padding: `2px 8px`,
                                   fontSize: '0.6875rem',
                                   fontWeight: 500,
-                                  padding: '2px 4px',
+                                  cursor: 'pointer',
                                 }}
                               >
-                                Edit
+                                Remove
                               </button>
                               <button
-                                onClick={() => setDeletingConstraintId(constraint.id)}
+                                onClick={() => setDeletingConstraintId(null)}
                                 style={{
-                                  background: 'none',
+                                  background: colors.bg.hover,
+                                  color: colors.text.secondary,
                                   border: 'none',
-                                  color: '#9ca3af',
+                                  borderRadius: radius.sm,
+                                  padding: `2px 8px`,
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 500,
                                   cursor: 'pointer',
-                                  fontSize: '0.75rem',
-                                  padding: '2px 4px',
                                 }}
                               >
-                                ✕
+                                Cancel
                               </button>
                             </span>
                           </div>
-                          {affectedModes.length > 0 && (
-                            <div style={{
-                              marginTop: '4px',
-                              fontSize: '0.625rem',
-                              color: '#b45309',
-                              fontWeight: 500,
-                            }}>
-                              Affects: {affectedModes.join(', ')}
+                        ) : (
+                          // Normal display
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontFamily: "'SF Mono', 'Monaco', monospace", fontWeight: 500 }}>
+                                {displayTitle}
+                              </span>
+                              <span style={{ display: 'flex', gap: spacing.xs }}>
+                                <button
+                                  onClick={() => handleEditUnavailable(constraint.id)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#6366f1',
+                                    cursor: 'pointer',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 500,
+                                    padding: '2px 4px',
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => setDeletingConstraintId(constraint.id)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#9ca3af',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                    padding: '2px 4px',
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                            {fragmentedModes.length > 0 && (
+                              <div style={{
+                                marginTop: '4px',
+                                fontSize: '0.625rem',
+                                color: '#b45309',
+                                fontWeight: 500,
+                              }}>
+                                Fragments: {fragmentedModes.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
 

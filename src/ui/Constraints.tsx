@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import type { V1Constraint, FixedBlockPayload } from '../constraints/types.js';
+import type { V1Constraint, FixedBlockPayload, BreakType } from '../constraints/types.js';
 import { isFixedBlockPayload } from '../constraints/types.js';
 import { loadConstraints, saveConstraints, loadChronotypeProfile } from '../storage/index.js';
 import { generateConstraintId, validateConstraint } from '../constraints/index.js';
 import { generateBaselineWindows } from '../baseline/index.js';
+import { assessModeWindow } from '../utils/breakClassification.js';
+import type { Mode } from '../types/modeStates.js';
 import { colors } from './tokens.js';
 
 export function Constraints() {
@@ -15,6 +17,7 @@ export function Constraints() {
 
   // Form state
   const [blockLabel, setBlockLabel] = useState('');
+  const [blockBreakType, setBlockBreakType] = useState<BreakType>('unclassified');
   const [blockDate, setBlockDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [blockStart, setBlockStart] = useState('08:00');
   const [blockEnd, setBlockEnd] = useState('09:00');
@@ -30,6 +33,7 @@ export function Constraints() {
     setEditingId(null);
     setError(null);
     setBlockLabel('');
+    setBlockBreakType('unclassified');
     setBlockDate(new Date().toISOString().split('T')[0]);
     setBlockStart('08:00');
     setBlockEnd('09:00');
@@ -40,6 +44,7 @@ export function Constraints() {
     if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
       setEditingId(constraint.id);
       setBlockLabel(constraint.payload.label || '');
+      setBlockBreakType(constraint.payload.breakType || 'unclassified');
       setBlockDate(constraint.payload.dateISO);
       setBlockStart(constraint.payload.startLocal);
       setBlockEnd(constraint.payload.endLocal);
@@ -67,6 +72,7 @@ export function Constraints() {
       endLocal: blockEnd,
       allDay: isAllDay || undefined,
       label: blockLabel.trim() || undefined,
+      breakType: blockBreakType,
     };
 
     const constraint: V1Constraint = {
@@ -173,6 +179,80 @@ export function Constraints() {
                 style={{ ...inputStyle, flex: 1 }}
               />
               <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>optional</span>
+            </label>
+          </div>
+
+          {/* Break type selector */}
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ color: '#666', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              What kind of block is this?
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setBlockBreakType('commitment')}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  border: blockBreakType === 'commitment'
+                    ? '2px solid #6366f1'
+                    : '1px solid rgba(0, 0, 0, 0.1)',
+                  background: blockBreakType === 'commitment'
+                    ? 'rgba(99, 102, 241, 0.08)'
+                    : 'rgba(255, 255, 255, 0.8)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1a1a1a', marginBottom: '0.25rem' }}>
+                  🧠 Commitment
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#666', lineHeight: 1.4 }}>
+                  Meeting, call, focused work for others
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlockBreakType('rest')}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  border: blockBreakType === 'rest'
+                    ? '2px solid #10b981'
+                    : '1px solid rgba(0, 0, 0, 0.1)',
+                  background: blockBreakType === 'rest'
+                    ? 'rgba(16, 185, 129, 0.08)'
+                    : 'rgba(255, 255, 255, 0.8)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1a1a1a', marginBottom: '0.25rem' }}>
+                  🚶 Rest break
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#666', lineHeight: 1.4 }}>
+                  Walking, coffee, exercise, errand
+                </div>
+              </button>
+            </div>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              color: '#666',
+              fontSize: '0.8125rem',
+            }}>
+              <input
+                type="radio"
+                name="breakType"
+                checked={blockBreakType === 'unclassified'}
+                onChange={() => setBlockBreakType('unclassified')}
+                style={{ accentColor: '#6366f1' }}
+              />
+              Skip — let Align decide based on duration
             </label>
           </div>
 
@@ -295,8 +375,10 @@ export function Constraints() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {constraints.map(constraint => {
-            // Compute affected modes for this constraint
-            const affectedModes: string[] = [];
+            // Compute fragmenting and restorative modes for this constraint using classification engine
+            const fragmentingModes: string[] = [];
+            const restorativeModes: string[] = [];
+
             if (profile && constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
               const baselineWindows = generateBaselineWindows(profile, constraint.payload.dateISO);
               const constraintStart = constraint.payload.allDay ? '00:00' : constraint.payload.startLocal;
@@ -307,20 +389,34 @@ export function Constraints() {
                 return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
               };
 
-              const timesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string): boolean => {
-                const toMin = (t: string) => {
-                  const [h, m] = t.split(':').map(Number);
-                  return h * 60 + m;
-                };
-                return toMin(aStart) < toMin(bEnd) && toMin(bStart) < toMin(aEnd);
+              // Build unavailable block for classification
+              const unavailableBlock = {
+                id: constraint.id,
+                start: constraintStart,
+                end: constraintEnd,
+                label: constraint.payload.label,
+                breakType: constraint.payload.breakType,
               };
 
+              // Check each mode's window
               baselineWindows.forEach(bw => {
                 const bwStart = isoToHHMM(bw.start);
                 const bwEnd = isoToHHMM(bw.end);
-                if (timesOverlap(constraintStart, constraintEnd, bwStart, bwEnd)) {
-                  if (!affectedModes.includes(bw.mode)) {
-                    affectedModes.push(bw.mode);
+                const modeWindow = { start: bwStart, end: bwEnd };
+
+                // Use break classification engine to determine impact
+                const assessment = assessModeWindow(bw.mode as Mode, modeWindow, [unavailableBlock]);
+                const classifiedBreak = assessment.breaks.find(b => b.id === constraint.id);
+
+                if (classifiedBreak) {
+                  if (classifiedBreak.classification === 'fragmenting') {
+                    if (!fragmentingModes.includes(bw.mode)) {
+                      fragmentingModes.push(bw.mode);
+                    }
+                  } else {
+                    if (!restorativeModes.includes(bw.mode)) {
+                      restorativeModes.push(bw.mode);
+                    }
                   }
                 }
               });
@@ -332,7 +428,8 @@ export function Constraints() {
                 constraint={constraint}
                 onEdit={() => handleEdit(constraint)}
                 onDelete={() => handleDelete(constraint.id)}
-                affectedModes={affectedModes}
+                fragmentingModes={fragmentingModes}
+                restorativeModes={restorativeModes}
               />
             );
           })}
@@ -355,26 +452,35 @@ function UnavailableTimeItem({
   constraint,
   onEdit,
   onDelete,
-  affectedModes,
+  fragmentingModes,
+  restorativeModes,
 }: {
   constraint: V1Constraint;
   onEdit: () => void;
   onDelete: () => void;
-  affectedModes: string[];
+  fragmentingModes: string[];
+  restorativeModes: string[];
 }) {
   let label = '';
   let timeRange = '';
   let dateStr = '';
+  let breakType: BreakType = 'unclassified';
 
   if (constraint.kind === 'FIXED_BLOCK' && isFixedBlockPayload(constraint.payload)) {
     label = constraint.payload.label || '';
     dateStr = constraint.payload.dateISO;
+    breakType = constraint.payload.breakType || 'unclassified';
     if (constraint.payload.allDay) {
       timeRange = 'All day';
     } else {
       timeRange = `${constraint.payload.startLocal} – ${constraint.payload.endLocal}`;
     }
   }
+
+  const breakTypeIcon = breakType === 'commitment' ? '🧠' : breakType === 'rest' ? '🚶' : '';
+  const breakTypeLabel = breakType === 'commitment' ? 'Commitment' : breakType === 'rest' ? 'Rest break' : '';
+
+  const hasAnyImpact = fragmentingModes.length > 0 || restorativeModes.length > 0;
 
   return (
     <div
@@ -388,18 +494,32 @@ function UnavailableTimeItem({
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
-          {label && (
-            <div style={{ fontWeight: 600, color: '#1a1a1a', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              {label}
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+            {label && (
+              <span style={{ fontWeight: 600, color: '#1a1a1a', fontSize: '0.875rem' }}>
+                {label}
+              </span>
+            )}
+            {breakTypeIcon && (
+              <span style={{
+                fontSize: '0.6875rem',
+                color: breakType === 'commitment' ? '#6366f1' : '#10b981',
+                background: breakType === 'commitment' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}>
+                {breakTypeIcon} {breakTypeLabel}
+              </span>
+            )}
+          </div>
           <div style={{ color: '#666', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Monaco', monospace" }}>
             {timeRange} · {dateStr}
           </div>
-          {affectedModes.length > 0 && (
+          {/* Fragmenting modes - these create conflicts */}
+          {fragmentingModes.length > 0 && (
             <div style={{ marginTop: '0.375rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
-              <span style={{ color: '#9ca3af', fontSize: '0.6875rem' }}>Affects:</span>
-              {affectedModes.map(mode => (
+              <span style={{ color: '#b45309', fontSize: '0.6875rem' }}>Fragments:</span>
+              {fragmentingModes.map(mode => (
                 <span
                   key={mode}
                   style={{
@@ -413,9 +533,16 @@ function UnavailableTimeItem({
               ))}
             </div>
           )}
-          {affectedModes.length === 0 && (
+          {/* Restorative only - no fragmenting impact */}
+          {fragmentingModes.length === 0 && restorativeModes.length > 0 && (
+            <div style={{ marginTop: '0.375rem', color: '#10b981', fontSize: '0.6875rem' }}>
+              No impact on cognitive windows
+            </div>
+          )}
+          {/* No overlap with any modes */}
+          {!hasAnyImpact && (
             <div style={{ marginTop: '0.375rem', color: '#9ca3af', fontSize: '0.6875rem' }}>
-              No modes affected
+              Outside cognitive windows
             </div>
           )}
         </div>

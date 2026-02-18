@@ -10,9 +10,13 @@
  */
 
 import type { BaselineMode } from '../types.js';
+import type { BreakType } from '../constraints/types.js';
 
 // Re-export Mode as alias for clarity
 export type Mode = BaselineMode;
+
+// Re-export BreakType for convenience
+export type { BreakType };
 
 /**
  * Mode-specific states with asymmetric state sets.
@@ -96,9 +100,69 @@ export interface FragmentationAnalysis {
   /** Percentage of baseline window that is available (0-1) */
   percentageAvailable: number;
   /** Unavailable times that conflict with this window */
-  conflicts: Array<{ id: string; start: string; end: string; label?: string }>;
+  conflicts: Array<{ id: string; start: string; end: string; label?: string; breakType?: BreakType }>;
   /** Original baseline window before fragmentation */
   baselineWindow: TimeWindowHHMM;
+}
+
+/**
+ * Break classification result for a single unavailable block.
+ */
+export type BreakClassification = 'restorative' | 'fragmenting';
+
+/**
+ * Detailed break analysis for a single unavailable block within a mode window.
+ */
+export interface ClassifiedBreak {
+  id: string;
+  start: string;
+  end: string;
+  label?: string;
+  breakType: BreakType;
+  durationMinutes: number;
+  classification: BreakClassification;
+  /** Human-readable explanation of why this classification */
+  reason: string;
+}
+
+/**
+ * Available segment within a mode window.
+ */
+export interface AvailableSegment {
+  start: string;
+  end: string;
+  durationMinutes: number;
+  /** Viable if >= 30 minutes (minimum for sustained depth) */
+  viable: boolean;
+}
+
+/**
+ * Overall window status after break analysis.
+ * - 'clear': No fragmenting breaks (includes windows with only restorative breaks)
+ * - 'fragmented': Has fragmenting breaks, reduced reliability (Synthesis, Execution, Reflection)
+ * - 'disrupted': Has fragmenting breaks, structural misdirection risk (Framing)
+ * - 'withheld': Too fragmented to attempt (Evaluation)
+ */
+export type WindowStatus = 'clear' | 'fragmented' | 'disrupted' | 'withheld';
+
+/**
+ * Complete break assessment for a mode window.
+ */
+export interface BreakAssessment {
+  /** Classified breaks within this window */
+  breaks: ClassifiedBreak[];
+  /** Available time segments between breaks */
+  segments: AvailableSegment[];
+  /** Overall status after break analysis */
+  overallStatus: WindowStatus;
+  /** Total available minutes across all segments */
+  totalAvailableMinutes: number;
+  /** Percentage of baseline window available (0-1) */
+  availabilityPercent: number;
+  /** Count of breaks classified as fragmenting */
+  fragmentingBreakCount: number;
+  /** Count of breaks classified as restorative */
+  restorativeBreakCount: number;
 }
 
 /**

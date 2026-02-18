@@ -5,6 +5,14 @@
 export type ConstraintKind = 'FIXED_BLOCK';
 
 /**
+ * Break type for unavailable time blocks.
+ * - 'commitment': External obligation requiring cognitive engagement (meeting, call, focused work for others)
+ * - 'rest': Low cognitive load, voluntary break (walking, coffee, exercise, brief errand)
+ * - 'unclassified': User hasn't specified; system applies duration/position heuristics
+ */
+export type BreakType = 'commitment' | 'rest' | 'unclassified';
+
+/**
  * FIXED_BLOCK payload: one-time unavailable period for a specific date.
  * Example: unavailable on 2024-01-15 from 08:00-09:00
  */
@@ -19,6 +27,8 @@ export interface FixedBlockPayload {
   allDay?: boolean;
   /** Optional user-defined label (e.g., "Standup", "Gym") */
   label?: string;
+  /** Structural break classification for fragmentation analysis */
+  breakType?: BreakType;
 }
 
 /**

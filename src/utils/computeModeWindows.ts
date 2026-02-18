@@ -9,6 +9,7 @@
 import type { ModeGovernanceDecision, BaselineMode } from '../types.js';
 import type { ModeWindow, ModeStateValue, Mode, TimeWindowHHMM, FragmentationAnalysis, FragmentationSeverity } from '../types/modeStates.js';
 import { FAILURE_SIGNATURES } from '../constants/failureSignatures.js';
+import { assessModeWindow } from './breakClassification.js';
 
 /**
  * Convert HH:mm time string to minutes since midnight.
@@ -97,7 +98,7 @@ function getMinutesDuration(window: TimeWindowHHMM): number {
  */
 export function analyzeFragmentation(
   baselineWindow: TimeWindowHHMM,
-  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }>
+  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' }>
 ): FragmentationAnalysis {
   // Find all unavailable times that intersect this baseline
   const conflicts = unavailableTimes.filter(ut =>
@@ -251,7 +252,7 @@ function isoToHHMM(iso: string): string {
  */
 export function computeModeWindows(
   decisions: ModeGovernanceDecision[],
-  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }> = []
+  unavailableTimes: Array<{ id: string; start: string; end: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' }> = []
 ): ModeWindow[] {
   const modeWindows: ModeWindow[] = [];
 
@@ -292,16 +293,37 @@ export function computeModeWindows(
           baselineWindow,
         };
 
-    // CRITICAL FIX: Use fragmentation analysis to determine effective verdict
-    // If our analysis found conflicts, override the governor's verdict
+    // Use break classification engine to determine if window is actually fragmented
+    // This distinguishes restorative breaks (no impact) from fragmenting breaks
     let effectiveVerdict = decision.decision;
-    if (fragmentation.hasFragmentation && decision.decision === 'PERMIT') {
-      // Governor said PERMIT but we detected conflicts - treat as FRAGMENTED
-      effectiveVerdict = 'FRAGMENTED';
+    let classificationSeverity: FragmentationSeverity = 'LIGHT';
+
+    if (baselineWindow.start && baselineWindow.end && unavailableTimes.length > 0) {
+      const breakAssessment = assessModeWindow(mode, baselineWindow, unavailableTimes);
+
+      // Only treat as FRAGMENTED if classification engine says so
+      // 'clear' means all breaks are restorative - no warnings needed
+      if (breakAssessment.overallStatus !== 'clear' && decision.decision === 'PERMIT') {
+        effectiveVerdict = 'FRAGMENTED';
+
+        // Map classification status to severity for state mapping
+        if (breakAssessment.overallStatus === 'withheld') {
+          classificationSeverity = 'SEVERE';
+        } else if (breakAssessment.overallStatus === 'disrupted' || breakAssessment.overallStatus === 'fragmented') {
+          // Use availability percent to determine severity
+          if (breakAssessment.availabilityPercent < 0.5) {
+            classificationSeverity = 'SEVERE';
+          } else if (breakAssessment.availabilityPercent < 0.75) {
+            classificationSeverity = 'MODERATE';
+          } else {
+            classificationSeverity = 'LIGHT';
+          }
+        }
+      }
     }
 
-    // Map verdict to state, considering fragmentation severity
-    const state = mapVerdictToState(mode, effectiveVerdict, fragmentation.fragmentationSeverity);
+    // Map verdict to state, considering classification severity
+    const state = mapVerdictToState(mode, effectiveVerdict, classificationSeverity);
 
     // Skip SILENCE state for REFLECTION (per spec: "shows nothing")
     if (mode === 'REFLECTION' && state === 'SILENCE') {
@@ -411,11 +433,12 @@ export function extractUnavailableTimes(
       startLocal?: string;
       endLocal?: string;
       label?: string;
+      breakType?: 'commitment' | 'rest' | 'unclassified';
     };
   }>,
   selectedDate: string
-): Array<{ id: string; start: string; end: string; label?: string }> {
-  const unavailableTimes: Array<{ id: string; start: string; end: string; label?: string }> = [];
+): Array<{ id: string; start: string; end: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' }> {
+  const unavailableTimes: Array<{ id: string; start: string; end: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' }> = [];
 
   for (const constraint of constraints) {
     if (constraint.kind !== 'FIXED_BLOCK') continue;
@@ -441,6 +464,7 @@ export function extractUnavailableTimes(
       start,
       end,
       label: payload.label,
+      breakType: payload.breakType,
     });
   }
 

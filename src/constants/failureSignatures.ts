@@ -13,11 +13,13 @@
 
 import type { Mode, FailureSignature, FragmentationAnalysis } from '../types/modeStates.js';
 
+import type { BreakType } from '../constraints/types.js';
+
 /**
  * Format a single conflict for display.
  * Uses label if available, otherwise falls back to time range.
  */
-function formatConflict(conflict: { start: string; end: string; label?: string }): string {
+function formatConflict(conflict: { start: string; end: string; label?: string; breakType?: BreakType }): string {
   if (conflict.label) {
     return `${conflict.label} (${conflict.start})`;
   }
@@ -28,7 +30,7 @@ function formatConflict(conflict: { start: string; end: string; label?: string }
  * Format multiple conflicts for display.
  * Uses labels when available to make warnings more actionable.
  */
-function formatConflicts(conflicts: Array<{ start: string; end: string; label?: string }>): string {
+function formatConflicts(conflicts: Array<{ start: string; end: string; label?: string; breakType?: BreakType }>): string {
   if (conflicts.length === 0) return '';
   if (conflicts.length === 1) {
     return formatConflict(conflicts[0]);
@@ -41,6 +43,20 @@ function formatConflicts(conflicts: Array<{ start: string; end: string; label?: 
     return `${conflicts.length} blocks`;
   }
   return `${conflicts.length} blocks`;
+}
+
+/**
+ * Get count-exceeded message when > 2 breaks fragment regardless of type.
+ */
+function getCountExceededMessage(count: number, portions: number): string {
+  return `${count} blocks split this into ${portions} disconnected pieces. Heavy fragmentation makes blind spots very likely.`;
+}
+
+/**
+ * Check if count threshold exceeded (> 2 breaks auto-fragments).
+ */
+function isCountExceeded(conflicts: Array<unknown>): boolean {
+  return conflicts.length > 2;
 }
 
 /**
@@ -80,14 +96,22 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
         if (fragmentation.percentageAvailable === 0) {
           return `Schedule conflicts completely block this window.`;
         }
-        if (fragmentation.conflicts.length >= 3) {
-          return `Multiple blocks split this into ${fragmentation.availablePortions.length} disconnected pieces. Heavy fragmentation makes blind spots very likely.`;
+        // Count exceeded: > 2 breaks fragments regardless of type
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
         }
         if (fragmentation.percentageAvailable < 0.3) {
           return `Only ${Math.round(fragmentation.percentageAvailable * 100)}% of the window is available. Decisions may feel solid but miss what fell through the gaps.`;
         }
         const n = fragmentation.conflicts.length;
         const conflictDesc = formatConflicts(fragmentation.conflicts);
+        // Check if it's a commitment block
+        const hasCommitment = fragmentation.conflicts.some(c => c.breakType === 'commitment');
+        if (hasCommitment) {
+          const commitmentConflict = fragmentation.conflicts.find(c => c.breakType === 'commitment');
+          const label = commitmentConflict?.label || 'Commitment';
+          return `${label} requires cognitive engagement — imposes switch cost that degrades judgment quality.`;
+        }
         if (n === 1 && fragmentation.conflicts[0]?.label) {
           return `${conflictDesc} splits this window. Decisions may feel solid but miss what fell through the gaps.`;
         }
@@ -125,7 +149,18 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       ],
       overrideAdvice: 'If starting late or with interruptions, note what context you might be missing',
       structuralCause: (fragmentation: FragmentationAnalysis) => {
+        // Count exceeded: > 2 breaks fragments regardless of type
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
+        }
         const n = fragmentation.conflicts.length;
+        // Check if it's a commitment block
+        const hasCommitment = fragmentation.conflicts.some(c => c.breakType === 'commitment');
+        if (hasCommitment) {
+          const commitmentConflict = fragmentation.conflicts.find(c => c.breakType === 'commitment');
+          const label = commitmentConflict?.label || 'Commitment';
+          return `${label} requires cognitive engagement — context switching makes framing the wrong problem more likely.`;
+        }
         if (n >= 2) {
           const conflictDesc = formatConflicts(fragmentation.conflicts);
           return `${conflictDesc} split this window. Each break costs focus — rebuilding gets harder each time.`;
@@ -151,6 +186,10 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       structuralCause: (fragmentation: FragmentationAnalysis) => {
         if (fragmentation.percentageAvailable === 0) {
           return `Unavailable blocks completely eliminate this window. No time available for problem framing.`;
+        }
+        // Count exceeded message
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
         }
         return `Only ${Math.round(fragmentation.percentageAvailable * 100)}% available across ${fragmentation.availablePortions.length} disconnected pieces—too fragmented to build a coherent mental model.`;
       },
@@ -186,7 +225,18 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       ],
       overrideAdvice: 'Draft now if you can review it tomorrow to catch gaps',
       structuralCause: (fragmentation: FragmentationAnalysis) => {
+        // Count exceeded: > 2 breaks fragments regardless of type
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
+        }
         const n = fragmentation.conflicts.length;
+        // Check if it's a commitment block
+        const hasCommitment = fragmentation.conflicts.some(c => c.breakType === 'commitment');
+        if (hasCommitment) {
+          const commitmentConflict = fragmentation.conflicts.find(c => c.breakType === 'commitment');
+          const label = commitmentConflict?.label || 'Commitment';
+          return `${label} requires cognitive engagement — synthesis threads break and hidden gaps form.`;
+        }
         if (n >= 2) {
           const conflictDesc = formatConflicts(fragmentation.conflicts);
           return `${conflictDesc} split this into ${fragmentation.availablePortions.length} disconnected pieces. Each break costs focus — rebuilding gets harder each time.`;
@@ -210,6 +260,10 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
         'Meeting synthesis notes',
       ],
       structuralCause: (fragmentation: FragmentationAnalysis) => {
+        // Count exceeded message
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
+        }
         return `Only ${Math.round(fragmentation.percentageAvailable * 100)}% of the window is available across ${fragmentation.availablePortions.length} disconnected fragments—too fragmented to attempt synthesis.`;
       },
     },
@@ -244,6 +298,10 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
       ],
       overrideAdvice: "Errors are obvious and correctable—fine to continue for work with fast feedback (coding with tests, email triage, ops work)",
       structuralCause: (fragmentation: FragmentationAnalysis) => {
+        // Count exceeded: > 2 breaks fragments regardless of type
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
+        }
         const n = fragmentation.conflicts.length;
         if (n === 1) {
           const conflictDesc = formatConflict(fragmentation.conflicts[0]);
@@ -264,6 +322,10 @@ export const FAILURE_SIGNATURES: Record<Mode, Record<string, FailureSignature>> 
         'Routine operations',
       ],
       structuralCause: (fragmentation: FragmentationAnalysis) => {
+        // Count exceeded message
+        if (isCountExceeded(fragmentation.conflicts)) {
+          return getCountExceededMessage(fragmentation.conflicts.length, fragmentation.availablePortions.length);
+        }
         return `Window is too fragmented (${Math.round(fragmentation.percentageAvailable * 100)}% available across ${fragmentation.availablePortions.length} pieces) even for execution tasks.`;
       },
     },

@@ -37,7 +37,7 @@ export function GovernorDisplay({
     constraints.map(c => ({
       id: c.id,
       kind: c.kind,
-      payload: c.payload as { dateISO?: string; allDay?: boolean; startLocal?: string; endLocal?: string },
+      payload: c.payload as { dateISO?: string; allDay?: boolean; startLocal?: string; endLocal?: string; label?: string; breakType?: 'commitment' | 'rest' | 'unclassified' },
     })),
     selectedDate
   );
