@@ -9,6 +9,27 @@ export type Chronotype = 'AURORA' | 'DAYBREAK' | 'MERIDIAN' | 'TWILIGHT' | 'NOCT
 export type ChronotypeConfidence = 'HIGH' | 'MED' | 'LOW';
 
 /**
+ * Fragility level for focus stability.
+ */
+export type FragilityLevel = 'Low' | 'Medium' | 'High';
+
+/**
+ * Source of chronotype determination.
+ */
+export type ChronotypeSource = 'quiz' | 'oura';
+
+/**
+ * Oura chronotype selections (as shown in Oura app).
+ */
+export type OuraChronotypeSelection =
+  | 'Early morning type'
+  | 'Morning type'
+  | 'Late morning type'
+  | 'Early evening type'
+  | 'Evening type'
+  | 'Late evening type';
+
+/**
  * Chronotype profile derived from quiz answers.
  * Deterministic: same answers always produce same profile.
  */
@@ -16,6 +37,23 @@ export interface ChronotypeProfile {
   chronotype: Chronotype;
   confidence: ChronotypeConfidence;
   computedAt: string; // ISO string
+}
+
+/**
+ * Extended chronotype profile with additional computed fields.
+ * Used for wizard flow result display.
+ */
+export interface ExtendedChronotypeProfile extends ChronotypeProfile {
+  /** Mid-sleep corrected (decimal hours, e.g., 3.5 = 03:30) */
+  msfsc: number;
+  /** Social jetlag in hours (null for Oura flow since not computable) */
+  sjl_hours: number | null;
+  /** Focus fragility level */
+  fragility: FragilityLevel;
+  /** Raw fragility score (-0.25 to +0.25) */
+  fragility_score: number;
+  /** Source of chronotype determination */
+  source: ChronotypeSource;
 }
 
 /**

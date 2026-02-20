@@ -1,4 +1,11 @@
-import type { ChronotypeProfile, Chronotype, ChronotypeConfidence } from '../types.js';
+import type {
+  ChronotypeProfile,
+  ExtendedChronotypeProfile,
+  Chronotype,
+  ChronotypeConfidence,
+  FragilityLevel,
+  ChronotypeSource,
+} from '../types.js';
 
 const STORAGE_KEY = 'align.v1.chronotypeProfile';
 
@@ -50,7 +57,7 @@ export function clearChronotypeProfile(): void {
 }
 
 /**
- * Validates that an object is a valid ChronotypeProfile.
+ * Validates that an object is a valid ChronotypeProfile or ExtendedChronotypeProfile.
  */
 function isValidChronotypeProfile(obj: unknown): boolean {
   if (!obj || typeof obj !== 'object') {
@@ -80,7 +87,47 @@ function isValidChronotypeProfile(obj: unknown): boolean {
     return false;
   }
 
+  // Validate extended profile fields if present
+  if ('msfsc' in profile) {
+    if (typeof profile.msfsc !== 'number' || profile.msfsc < 0 || profile.msfsc >= 24) {
+      return false;
+    }
+  }
+
+  if ('sjl_hours' in profile) {
+    if (profile.sjl_hours !== null && (typeof profile.sjl_hours !== 'number' || profile.sjl_hours < 0)) {
+      return false;
+    }
+  }
+
+  if ('fragility' in profile) {
+    const validFragilityLevels: FragilityLevel[] = ['Low', 'Medium', 'High'];
+    if (!validFragilityLevels.includes(profile.fragility as FragilityLevel)) {
+      return false;
+    }
+  }
+
+  if ('fragility_score' in profile) {
+    if (typeof profile.fragility_score !== 'number' || profile.fragility_score < -0.25 || profile.fragility_score > 0.25) {
+      return false;
+    }
+  }
+
+  if ('source' in profile) {
+    const validSources: ChronotypeSource[] = ['quiz', 'oura'];
+    if (!validSources.includes(profile.source as ChronotypeSource)) {
+      return false;
+    }
+  }
+
   return true;
+}
+
+/**
+ * Checks if a profile is an ExtendedChronotypeProfile.
+ */
+export function isExtendedProfile(profile: ChronotypeProfile): profile is ExtendedChronotypeProfile {
+  return 'msfsc' in profile && 'source' in profile;
 }
 
 /**
